@@ -4,7 +4,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'reac
 import { useRouter } from 'expo-router';
 import Colors from '../constants/Colors';
 import { useAuth } from './contexts/AuthContext';
-import { updateUsuario } from '../lib/api';
+import { updatePacienteMe, updatePsicologoMe } from '../lib/api';
 
 
 export default function EditarPerfilScreen() {
@@ -13,14 +13,23 @@ export default function EditarPerfilScreen() {
   const [nome, setNome] = useState(user?.nome || '');
   const [email, setEmail] = useState(user?.email || '');
   const [loading, setLoading] = useState(false);
+  const [preferencia, setPreferencia] = useState<'WhatsApp' | 'Telegram' | 'Discord'>('WhatsApp');
+  const [contato, setContato] = useState('');
+  const [bio, setBio] = useState('');
+  const [crp, setCrp] = useState('');
 
   // Atualização do contexto após salvar (forçando recarregar o perfil)
   const handleSalvar = async () => {
     if (!user || !token) return;
     setLoading(true);
     try {
-      const atualizado = await updateUsuario(user.id, { nome, email }, token);
-      updateUser({ id: user.id, nome: atualizado.nome, email: atualizado.email });
+      if (user.role === 'psicologo') {
+        await updatePsicologoMe({ nome, crp, bio }, token);
+        updateUser({ id: user.id, nome, email });
+      } else {
+        await updatePacienteMe({ nome, preferencia_comunicacao: preferencia, contato_preferido: contato }, token);
+        updateUser({ id: user.id, nome, email });
+      }
       Alert.alert('Sucesso', 'Perfil atualizado com sucesso!');
       router.replace('/(tabs)/perfil');
     } catch (error: any) {
@@ -47,6 +56,27 @@ export default function EditarPerfilScreen() {
         keyboardType="email-address"
         autoCapitalize="none"
       />
+
+      {user?.role !== 'psicologo' && (
+        <>
+          <Text style={{ color: Colors.text, marginBottom: 6 }}>Preferência de comunicação</Text>
+          <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+            {(['WhatsApp','Telegram','Discord'] as const).map((p) => (
+              <TouchableOpacity key={p} onPress={() => setPreferencia(p)} style={{ paddingVertical: 6, paddingHorizontal: 10, borderWidth: 1, borderColor: Colors.border, borderRadius: 20, marginRight: 6, backgroundColor: preferencia===p?Colors.tint:Colors.card }}>
+                <Text style={{ color: preferencia===p?Colors.card:Colors.text }}>{p}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TextInput style={styles.input} placeholder="Contato preferido" value={contato} onChangeText={setContato} />
+        </>
+      )}
+
+      {user?.role === 'psicologo' && (
+        <>
+          <TextInput style={styles.input} placeholder="CRP" value={crp} onChangeText={setCrp} />
+          <TextInput style={[styles.input, { height: 100 }]} placeholder="Bio" value={bio} onChangeText={setBio} multiline />
+        </>
+      )}
       <TouchableOpacity style={styles.button} onPress={handleSalvar} disabled={loading}>
         <Text style={styles.buttonText}>{loading ? 'Salvando...' : 'Salvar'}</Text>
       </TouchableOpacity>

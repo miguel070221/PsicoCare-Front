@@ -1,9 +1,15 @@
 import { Tabs } from 'expo-router';
-import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function TabLayout() {
+  const { user, isLoading } = useAuth();
+  const role = user?.role;
+  if (isLoading || !role) {
+    // Evita piscar itens indevidos antes do contexto carregar
+    return null;
+  }
   return (
     <Tabs
       screenOptions={{
@@ -36,43 +42,89 @@ export default function TabLayout() {
         },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Início',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="agendamentos"
-        options={{
-          title: 'Agendamentos',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar-outline" color={color} size={size} />
-          ),
-        }}
-      />
-      {/* Aba de Acompanhamento removida: agora integrada em Agendamentos */}
-      <Tabs.Screen
-        name="emergencias"
-        options={{
-          title: 'Emergências',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="warning-outline" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="perfil"
-        options={{
-          title: 'Perfil',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-circle-outline" color={color} size={size} />
-          ),
-        }}
-      />
+      {role !== 'psicologo' && (
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Início',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="home-outline" color={color} size={size} />
+            ),
+          }}
+        />
+      )}
+
+      {role !== 'psicologo' && (
+        <Tabs.Screen
+          name="psicologos"
+          options={{
+            title: 'Psicólogos',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="people-outline" color={color} size={size} />
+            ),
+          }}
+        />
+      )}
+
+      {role === 'psicologo' && (
+        <Tabs.Screen
+          name="home-psicologo"
+          options={{
+            title: 'Painel',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="briefcase-outline" color={color} size={size} />
+            ),
+          }}
+        />
+      )}
+
+      {role === 'psicologo' && (
+        <Tabs.Screen
+          name="solicitacoes-psicologo"
+          options={{
+            title: 'Solicitações',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="mail-unread-outline" color={color} size={size} />
+            ),
+          }}
+        />
+      )}
+
+      {role !== 'psicologo' && (
+        <Tabs.Screen
+          name="emergencias"
+          options={{
+            title: 'Emergências',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="warning-outline" color={color} size={size} />
+            ),
+          }}
+        />
+      )}
+
+      {role !== 'psicologo' && (
+        <Tabs.Screen
+          name="avaliacoes"
+          options={{
+            title: 'Avaliações',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="star-outline" color={color} size={size} />
+            ),
+          }}
+        />
+      )}
+
+      {(
+        <Tabs.Screen
+          name="perfil"
+          options={{
+            title: 'Perfil',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="person-circle-outline" color={color} size={size} />
+            ),
+          }}
+        />
+      )}
     </Tabs>
   );
 }

@@ -6,8 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 import { useEffect, useState } from 'react';
-import { listarProfissionais, toggleDisponibilidade } from '../../lib/api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { toggleDisponibilidade } from '../../lib/api';
 
 export default function Perfil() {
   const router = useRouter();
@@ -15,6 +14,23 @@ export default function Perfil() {
   const [modalVisible, setModalVisible] = useState(false);
   const [profissional, setProfissional] = useState<any | null>(null);
   const [loadingProf, setLoadingProf] = useState(false);
+
+  // Hook deve ficar sempre antes de qualquer return condicional
+  useEffect(() => {
+    (async () => {
+      if (user?.role === 'psicologo') {
+        // Inicializa estado mínimo do profissional
+        setLoadingProf(true);
+        try {
+          setProfissional({ id: user.id, disponivel: false });
+        } finally {
+          setLoadingProf(false);
+        }
+      } else {
+        setProfissional(null);
+      }
+    })();
+  }, [user]);
 
   const handleLogout = async () => {
     setModalVisible(false);
@@ -27,30 +43,7 @@ export default function Perfil() {
     }, 100);
   };
 
-  if (!user) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text>A carregar perfil...</Text>
-      </View>
-    );
-  }
-
-  useEffect(() => {
-    (async () => {
-      if (user?.role === 'psicologo' && user.profissionalId) {
-        setLoadingProf(true);
-        try {
-          const profs = await listarProfissionais();
-          const me = profs.find((p: any) => p.id === user.profissionalId);
-          setProfissional(me || null);
-        } catch (e) {
-          setProfissional(null);
-        } finally {
-          setLoadingProf(false);
-        }
-      }
-    })();
-  }, [user]);
+  const isLoadingUser = !user;
 
   return (
     <ScrollView style={styles.container}>
@@ -59,8 +52,8 @@ export default function Perfil() {
       </View>
       <View style={styles.headerContainer}>
         <Ionicons name="person-circle" size={80} color={Colors.tint} />
-        <Text style={styles.userName}>{user.nome}</Text>
-        <Text style={styles.userEmail}>{user.email}</Text>
+        <Text style={styles.userName}>{user?.nome || 'Usuário'}</Text>
+        <Text style={styles.userEmail}>{user?.email || ''}</Text>
       </View>
 
       <View style={styles.menuContainer}>
@@ -72,14 +65,14 @@ export default function Perfil() {
           <Ionicons name="log-out-outline" size={24} color={Colors.destructive} />
           <Text style={[styles.listItemText, { color: Colors.destructive }]}>Sair</Text>
         </TouchableOpacity>
-        {user.role === 'psicologo' && profissional && (
+        {user?.role === 'psicologo' && profissional && (
             <TouchableOpacity style={styles.listItem} onPress={async () => {
             // toggle
             const novo = profissional.disponivel ? 0 : 1;
             try {
                 // precisa de token; usamos contexto
                 if (!token) return;
-                await toggleDisponibilidade(profissional.id, novo === 1, token as string);
+                await toggleDisponibilidade(novo === 1, token as string);
               setProfissional({ ...profissional, disponivel: novo });
             } catch (e) {
               // ignore

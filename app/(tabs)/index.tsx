@@ -52,6 +52,14 @@ export default function Dashboard() {
   // Nome do psicólogo no próximo agendamento
   const nomePsicologo = proximoAgendamento?.psicologo_nome || proximoAgendamento?.profissional_nome || '';
 
+  if (user?.role === 'psicologo') {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+        <Text style={styles.hello}>Esta seção é para pacientes.</Text>
+      </ScrollView>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <View style={styles.header}>

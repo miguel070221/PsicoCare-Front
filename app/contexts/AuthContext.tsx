@@ -3,7 +3,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { jwtDecode } from 'jwt-decode'; // Precisaremos desta biblioteca
-import { getUsuarioById } from '../../lib/api';
 
 // Definir a estrutura dos dados do utilizador
 interface User {
@@ -12,7 +11,7 @@ interface User {
   email: string;
 }
 interface UserExtended extends User {
-  role?: 'paciente' | 'psicologo';
+  role?: 'paciente' | 'psicologo' | 'admin';
   profissionalId?: number | null;
 }
 
@@ -54,31 +53,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signIn = async (receivedToken: string) => {
     await AsyncStorage.setItem('token', receivedToken);
     const decodedToken: any = jwtDecode(receivedToken);
-    let nome = decodedToken.nome;
-    let email = decodedToken.email;
-    const role = decodedToken.role as 'paciente' | 'psicologo' | undefined;
-    const profissionalId = decodedToken.profissionalId as number | undefined;
-    // Se não houver nome/email no token, busca do backend
-    if (!nome || !email) {
-      try {
-        const usuario = await getUsuarioById(decodedToken.id, receivedToken);
-        nome = usuario.nome;
-        email = usuario.email;
-      } catch (e) {
-        // fallback: mantém o que veio do token
-      }
-    }
-    setUser({ id: decodedToken.id, nome, email, role, profissionalId: profissionalId ?? null });
+    const role = decodedToken.role as 'paciente' | 'psicologo' | 'admin' | undefined;
+    setUser({
+      id: decodedToken.id,
+      nome: decodedToken.nome,
+      email: decodedToken.email,
+      role,
+      profissionalId: decodedToken.profissionalId ?? null,
+    });
     setToken(receivedToken);
   };
 
   const signOut = async () => {
-    console.log('SignOut chamado');
     await AsyncStorage.removeItem('token');
     setUser(null);
     setToken(null);
     setTimeout(() => {
-      // Força reload do contexto após logout
       if (typeof window !== 'undefined') {
         window.location.reload();
       }

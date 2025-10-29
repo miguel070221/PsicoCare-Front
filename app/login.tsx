@@ -3,12 +3,13 @@ import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Colors from '../constants/Colors';
-import { login } from '../lib/api';
+import { loginPaciente, loginPsicologo, loginAdmin } from '../lib/api';
 import { useAuth } from './contexts/AuthContext';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [tipo, setTipo] = useState<'paciente' | 'psicologo' | 'admin'>('paciente');
   const router = useRouter();
   const { signIn } = useAuth();
 
@@ -32,13 +33,18 @@ export default function Login() {
     }
 
     try {
-      const data = await login({ email, senha });
+      let data;
+      if (tipo === 'psicologo') data = await loginPsicologo({ email, senha });
+      else if (tipo === 'admin') data = await loginAdmin({ email, senha });
+      else data = await loginPaciente({ email, senha });
       await signIn(data.token); // Atualiza o contexto com nome/email/role do token
       Alert.alert('Sucesso', `Bem-vindo, ${data.nome || 'usuário'}`);
-      if (data.role === 'psicologo') {
-        router.replace('/home-psicologo');
+      if (tipo === 'psicologo') {
+        router.replace('/(tabs)/home-psicologo');
+      } else if (tipo === 'admin') {
+        router.replace('/admin-dashboard');
       } else {
-        router.replace('/');
+        router.replace('/(tabs)');
       }
     } catch (error: any) {
       let msg = error.message || 'Falha no login';
@@ -54,6 +60,18 @@ export default function Login() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Login</Text>
+
+      <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 12 }}>
+        <TouchableOpacity onPress={() => setTipo('paciente')} style={[styles.roleBtn, tipo === 'paciente' && { backgroundColor: Colors.tint }]}>
+          <Text style={[styles.roleText, tipo === 'paciente' && { color: Colors.card }]}>Paciente</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setTipo('psicologo')} style={[styles.roleBtn, tipo === 'psicologo' && { backgroundColor: Colors.tint }]}>
+          <Text style={[styles.roleText, tipo === 'psicologo' && { color: Colors.card }]}>Psicólogo</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setTipo('admin')} style={[styles.roleBtn, tipo === 'admin' && { backgroundColor: Colors.tint }]}>
+          <Text style={[styles.roleText, tipo === 'admin' && { color: Colors.card }]}>Admin</Text>
+        </TouchableOpacity>
+      </View>
 
       <TextInput
         placeholder="Email"
@@ -123,5 +141,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '600',
     marginTop: 8,
+  },
+  roleBtn: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    marginHorizontal: 4,
+    backgroundColor: Colors.card,
+  },
+  roleText: {
+    color: Colors.text,
+    fontWeight: '600',
   },
 });

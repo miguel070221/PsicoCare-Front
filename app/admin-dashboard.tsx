@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import Colors from '../../constants/Colors';
-import { useAuth } from '../contexts/AuthContext';
+import Colors from '../constants/Colors';
+import { useAuth } from './contexts/AuthContext';
 
 export default function AdminDashboard() {
   const { user } = useAuth();

@@ -30,9 +30,7 @@ export const getAcompanhamentos = async (token: string): Promise<any[]> => {
 /**
  * Buscar dados do usuário pelo ID
  */
-export const getUsuarioById = async (id: number, token: string): Promise<any> => {
-  return await getComToken(`/usuarios/${id}`, token);
-};
+// Removido: endpoint antigo de usuários genéricos
 /**
  * Buscar agendamentos do usuário autenticado
  */
@@ -49,15 +47,19 @@ export const criarAgendamento = async (dados: { profissional_id: number; data_ho
 /**
  * Listar profissionais
  */
-export const listarProfissionais = async (): Promise<any[]> => {
-  return await apiFetch('/profissionais');
+export const listarPsicologosPublicos = async (filtro?: { especializacao?: string; faixa?: string }): Promise<any[]> => {
+  const params = new URLSearchParams();
+  if (filtro?.especializacao) params.append('especializacao', filtro.especializacao);
+  if (filtro?.faixa) params.append('faixa', filtro.faixa);
+  const qs = params.toString();
+  return await apiFetch(`/psicologos/public${qs ? `?${qs}` : ''}`);
 };
 
 /**
  * Toggle disponibilidade do profissional
  */
-export const toggleDisponibilidade = async (id: number, disponivel: boolean, token: string): Promise<any> => {
-  return await apiFetch(`/profissionais/${id}/disponibilidade`, 'PATCH', { disponivel: disponivel ? 1 : 0 }, token);
+export const toggleDisponibilidade = async (disponivel: boolean, token: string): Promise<any> => {
+  return await apiFetch(`/psicologos/toggle-disponibilidade`, 'POST', { disponivel }, token);
 };
 
 /**
@@ -87,7 +89,7 @@ interface LoginResponse {
   token: string;
   nome: string;
   email: string;
-  role?: 'paciente' | 'psicologo';
+  role?: 'paciente' | 'psicologo' | 'admin';
   profissionalId?: number;
 }
 
@@ -130,26 +132,105 @@ const apiFetch = async (
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  if (!response.ok) {
-    const erro = await response.json();
-    throw new Error(erro.erro || 'Erro na requisição');
+  if (response.status === 204) {
+    return null;
   }
 
-  return await response.json();
+  const raw = await response.text();
+  let data: any = null;
+  if (raw && raw.length > 0) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      data = raw; // não-JSON, mantém como texto
+    }
+  }
+
+  if (!response.ok) {
+    const msg = (data && (data.erro || data.message)) || (typeof data === 'string' ? data : 'Erro na requisição');
+    throw new Error(msg);
+  }
+
+  return data;
 };
 
 /**
  * Login de usuário
  */
-export const login = async ({ email, senha }: LoginPayload): Promise<LoginResponse> => {
-  return await apiFetch('/auth/login', 'POST', { email, senha });
+export const loginPaciente = async ({ email, senha }: LoginPayload): Promise<LoginResponse> => {
+  return await apiFetch('/pacientes/login', 'POST', { email, senha });
+};
+
+export const loginPsicologo = async ({ email, senha }: LoginPayload): Promise<LoginResponse> => {
+  return await apiFetch('/psicologos/login', 'POST', { email, senha });
+};
+
+export const loginAdmin = async ({ email, senha }: LoginPayload): Promise<LoginResponse> => {
+  return await apiFetch('/admin/login', 'POST', { email, senha });
+};
+
+export const solicitarAtendimento = async (id_psicologo: number, token: string): Promise<any> => {
+  return await apiFetch('/solicitacoes', 'POST', { id_psicologo }, token);
+};
+
+export const listarSolicitacoesPendentesPsicologo = async (token: string): Promise<any[]> => {
+  return await apiFetch('/psicologos/solicitacoes/pendentes', 'GET', undefined, token);
+};
+
+export const aceitarSolicitacaoPsicologo = async (solicitacaoId: number, id_paciente: number, token: string): Promise<any> => {
+  return await apiFetch('/psicologos/solicitacoes/aceitar', 'POST', { solicitacaoId, id_paciente }, token);
+};
+
+export const recusarSolicitacaoPsicologo = async (solicitacaoId: number, token: string): Promise<any> => {
+  return await apiFetch('/psicologos/solicitacoes/recusar', 'POST', { solicitacaoId }, token);
+};
+
+export const getPacienteMe = async (token: string): Promise<any> => {
+  return await apiFetch('/pacientes/me', 'GET', undefined, token);
+};
+
+export const updatePacienteMe = async (
+  dados: { nome?: string; idade?: number | null; genero?: string; preferencia_comunicacao?: string; contato_preferido?: string },
+  token: string
+): Promise<any> => {
+  return await apiFetch('/pacientes/me', 'PUT', dados, token);
+};
+
+export const updatePsicologoMe = async (
+  dados: { nome?: string; crp?: string; especializacoes?: string[]; bio?: string; foto_perfil?: string; perfil_completo?: boolean },
+  token: string
+): Promise<any> => {
+  return await apiFetch('/psicologos/me', 'PUT', dados, token);
+};
+
+export const listarAtendimentosDoPsicologo = async (token: string): Promise<any[]> => {
+  return await apiFetch('/atendimentos/psicologo/meus', 'GET', undefined, token);
 };
 
 /**
  * Cadastro de novo usuário
  */
 export const cadastrarUsuario = async (dados: UsuarioCadastro): Promise<any> => {
-  return await apiFetch('/usuarios', 'POST', dados);
+  if (dados.tipo === 'psicologo') {
+    return await apiFetch('/psicologos/register', 'POST', {
+      nome: dados.nome,
+      email: dados.email,
+      senha: dados.senha,
+      crp: dados.crp,
+      especializacoes: dados.especialidade ? [dados.especialidade] : [],
+      bio: '',
+    });
+  }
+  // paciente (default)
+  return await apiFetch('/pacientes/register', 'POST', {
+    nome: dados.nome,
+    email: dados.email,
+    senha: dados.senha,
+    idade: null,
+    genero: 'outro',
+    preferencia_comunicacao: 'WhatsApp',
+    contato_preferido: dados.telefone || '',
+  });
 };
 
 /**

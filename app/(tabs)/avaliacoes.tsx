@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert } from 'react-native';
+import AppHeader from '../../components/AppHeader';
+import EmptyState from '../../components/EmptyState';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 import { criarAcompanhamento, getAcompanhamentos } from '../../lib/api';
@@ -75,7 +77,7 @@ export default function AcompanhamentoDiario() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-      <Text style={styles.title}>Acompanhamento Diário</Text>
+      <AppHeader title="Acompanhamento Diário" subtitle="Registre seu dia" />
   <View style={styles.section}>
   <Text style={styles.sectionTitle}>Observações do dia</Text>
         <TextInput
@@ -159,19 +161,25 @@ export default function AcompanhamentoDiario() {
 
       {loadingAcompanhamento ? (
         <ActivityIndicator color={Colors.tint} style={{ marginTop: 16 }} />
-      ) : acompanhamentos.length > 0 && (
+      ) : (
         <View style={{ marginTop: 18 }}>
-          <Text style={styles.sectionTitle}>Histórico de acompanhamentos:</Text>
-          {acompanhamentos.map((a) => (
-            <View key={a.id} style={styles.card}> 
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                <Text style={{ color: Colors.text, fontWeight: '600', fontSize: 13, marginRight: 8 }}>{a.dataHora}</Text>
-                <Text style={{ color: Colors.textSecondary, fontSize: 13, marginRight: 8 }}>Sono: {a.sono || '-'}</Text>
-                <Text style={{ color: Colors.textSecondary, fontSize: 13 }}>Humor: {a.humor || '-'}</Text>
-              </View>
-              <Text style={{ color: Colors.text, marginTop: 2 }}>{a.texto}</Text>
-            </View>
-          ))}
+          {acompanhamentos.length === 0 ? (
+            <EmptyState icon="📝" title="Sem registros ainda" hint="Preencha o formulário acima" />
+          ) : (
+            <>
+              <Text style={styles.sectionTitle}>Histórico de acompanhamentos:</Text>
+              {acompanhamentos.map((a) => (
+                <View key={a.id} style={styles.card}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                    <Text style={{ color: Colors.text, fontWeight: '600', fontSize: 13, marginRight: 8 }}>{a.dataHora}</Text>
+                    <Text style={{ color: Colors.textSecondary, fontSize: 13, marginRight: 8 }}>Sono: {a.sono || '-'}</Text>
+                    <Text style={{ color: Colors.textSecondary, fontSize: 13 }}>Humor: {a.humor || '-'}</Text>
+                  </View>
+                  <Text style={{ color: Colors.text, marginTop: 2 }}>{a.texto}</Text>
+                </View>
+              ))}
+            </>
+          )}
         </View>
       )}
     </ScrollView>

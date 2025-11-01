@@ -33,7 +33,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   const updateUser = (newUser: User) => {
-    setUser(newUser);
+    setUser((prev) => {
+      if (!prev) return { ...newUser } as any;
+      return { ...prev, ...newUser } as any;
+    });
   };
 
   useEffect(() => {

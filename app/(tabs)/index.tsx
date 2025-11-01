@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native';
+import AppHeader from '../../components/AppHeader';
+import EmptyState from '../../components/EmptyState';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 import { getAgendamentosUsuario, getAcompanhamentos } from '../../lib/api';
@@ -62,9 +64,7 @@ export default function Dashboard() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Início</Text>
-      </View>
+      <AppHeader title="Início" subtitle="Painel do Paciente" />
       <Text style={styles.hello}>Painel do Paciente</Text>
       <Text style={styles.data}>Data: {dataHoje}</Text>
 
@@ -76,9 +76,9 @@ export default function Dashboard() {
               ? `${proximoAgendamento.data} ${proximoAgendamento.horario || ''}`
               : 'Nenhum'}
           </Text>
-          {proximoAgendamento && nomePsicologo ? (
+      {proximoAgendamento && nomePsicologo ? (
             <Text style={styles.cardSubtitle}>Psicólogo: {nomePsicologo}</Text>
-          ) : null}
+      ) : null}
     </View>
   // ...existing code...
         <View style={styles.card}>
@@ -101,7 +101,9 @@ export default function Dashboard() {
         </TouchableOpacity>
       </View>
 
-      {/* Espaço reservado para relatórios e notas clínicas futuras */}
+      {!proximoAgendamento && (
+        <EmptyState icon="📅" title="Sem agendamentos" hint="Agende sua próxima consulta" />
+      )}
     </ScrollView>
   );
 }

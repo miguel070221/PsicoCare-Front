@@ -12,16 +12,23 @@ export default function PsicologosScreen() {
 
   useEffect(() => {
     (async () => {
+      setLoading(true);
       try {
-        const data = await listarPsicologosPublicos();
+        // Passa o ID do usuário se for paciente, para incluir psicólogos vinculados
+        const data = await listarPsicologosPublicos(
+          user?.role === 'paciente' && user?.id ? { pacienteId: user.id } : undefined,
+          token || undefined
+        );
+        console.log('Psicólogos carregados:', data);
         setProfs(Array.isArray(data) ? data : []);
-      } catch (e) {
+      } catch (e: any) {
+        console.error('Erro ao carregar psicólogos:', e);
         setProfs([]);
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [user, token]);
 
   if (user?.role === 'psicologo') {
     return (
@@ -34,25 +41,64 @@ export default function PsicologosScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
       <Text style={styles.title}>Psicólogos disponíveis</Text>
+      {loading && (
+        <Text style={styles.meta}>Carregando...</Text>
+      )}
       {profs.length === 0 && !loading && (
         <Text style={styles.meta}>Nenhum psicólogo disponível no momento.</Text>
       )}
       {profs.map((p) => (
-        <View key={p.id} style={styles.card}>
-          <Text style={styles.name}>{p?.nome || `Psicólogo #${p?.id ?? ''}`}</Text>
-          <Text style={styles.meta}>{Array.isArray(p?.especializacoes) ? p.especializacoes.join(', ') : ''}</Text>
+        <View key={p.id} style={[styles.card, p.vinculado && styles.cardVinculado]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Text style={styles.name}>{p?.nome || p?.nome_completo || p?.nomeCompleto || `Psicólogo #${p?.id ?? ''}`}</Text>
+                {p.vinculado && (
+                  <View style={{ backgroundColor: Colors.tint, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
+                    <Text style={{ fontSize: 9, color: Colors.card, fontWeight: '700' }}>VINCULADO</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            {p.disponivel ? (
+              <View style={{ backgroundColor: '#E8F5E9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
+                <Text style={{ fontSize: 10, color: '#4CAF50', fontWeight: '600' }}>Disponível</Text>
+              </View>
+            ) : (
+              <View style={{ backgroundColor: '#FFF3E0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
+                <Text style={{ fontSize: 10, color: '#FF9800', fontWeight: '600' }}>Indisponível</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.meta}>CRP: {p?.crp || 'Não informado'}</Text>
+          <Text style={styles.meta}>{Array.isArray(p?.especializacoes) && p.especializacoes.length > 0 ? p.especializacoes.join(', ') : 'Sem especializações'}</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-            <TouchableOpacity style={[styles.btn, { backgroundColor: Colors.tint }]} onPress={async () => {
-              if (!token) return;
-              try {
-                await solicitarAtendimento(p.id, token);
-                alert('Solicitação enviada!');
-              } catch (err) {
-                alert('Falha ao enviar solicitação');
-              }
-            }}>
-              <Text style={{ color: Colors.card }}>Solicitar atendimento</Text>
-            </TouchableOpacity>
+            {!p.vinculado ? (
+              <TouchableOpacity style={[styles.btn, { backgroundColor: Colors.tint }]} onPress={async () => {
+                if (!token) {
+                  alert('Você precisa estar logado para solicitar atendimento.');
+                  return;
+                }
+                try {
+                  await solicitarAtendimento(p.id, token);
+                  alert('Solicitação enviada!');
+                  // Recarregar lista
+                  const data = await listarPsicologosPublicos(
+                    user?.role === 'paciente' && user?.id ? { pacienteId: user.id } : undefined,
+                    token
+                  );
+                  setProfs(Array.isArray(data) ? data : []);
+                } catch (err: any) {
+                  alert(err?.message || 'Falha ao enviar solicitação');
+                }
+              }}>
+                <Text style={{ color: Colors.card }}>Solicitar atendimento</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.btn, { backgroundColor: Colors.cardAlt, borderWidth: 1, borderColor: Colors.tint }]}>
+                <Text style={{ color: Colors.tint, fontWeight: '600' }}>✓ Já vinculado</Text>
+              </View>
+            )}
             <TouchableOpacity style={[styles.btn, { backgroundColor: Colors.cardAlt, borderWidth: 1, borderColor: Colors.border }]} onPress={() => setSelected(p)}>
               <Text style={{ color: Colors.text }}>Detalhes</Text>
             </TouchableOpacity>
@@ -81,10 +127,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   title: { fontSize: 20, fontWeight: '700', color: Colors.text, margin: 8 },
   card: { backgroundColor: Colors.card, padding: 12, borderRadius: 10, marginBottom: 10, borderWidth: 1, borderColor: Colors.border },
+  cardVinculado: { borderColor: Colors.tint, borderWidth: 2 },
   name: { fontSize: 16, fontWeight: '700', color: Colors.text },
   meta: { color: Colors.textSecondary, marginTop: 4 },
   btn: { padding: 10, borderRadius: 8 },
 });
+
+
+
+
 
 
 

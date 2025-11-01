@@ -4,7 +4,7 @@
 const primary = '#6EC1FF'; // azul pastel
 const primaryDark = '#4FB0F0';
 const headerBlue = '#5FB0E6'; // azul do header/footer
-const background = '#FFFFFF'; // fundo branco conforme design do anexo
+const background = '#F0FAFF'; // fundo claro (mesmo da tela de Avaliações)
 const card = '#FFFFFF';
 const cardAlt = '#F4FBFF';
 const text = '#0B2A4A'; // texto principal escuro

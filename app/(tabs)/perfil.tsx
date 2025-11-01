@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 import { useEffect, useState } from 'react';
-import { toggleDisponibilidade } from '../../lib/api';
+import { toggleDisponibilidade, getPsicologoMe } from '../../lib/api';
 
 export default function Perfil() {
   const router = useRouter();
@@ -19,9 +19,15 @@ export default function Perfil() {
   useEffect(() => {
     (async () => {
       if (user?.role === 'psicologo') {
-        // Inicializa estado mínimo do profissional
         setLoadingProf(true);
         try {
+          if (token) {
+            const me = await getPsicologoMe(token);
+            setProfissional(me);
+          } else {
+            setProfissional({ id: user.id, disponivel: false });
+          }
+        } catch {
           setProfissional({ id: user.id, disponivel: false });
         } finally {
           setLoadingProf(false);
@@ -52,7 +58,7 @@ export default function Perfil() {
       </View>
       <View style={styles.headerContainer}>
         <Ionicons name="person-circle" size={80} color={Colors.tint} />
-        <Text style={styles.userName}>{user?.nome || 'Usuário'}</Text>
+        <Text style={styles.userName}>{(user?.role === 'psicologo' ? profissional?.nome : user?.nome) || 'Usuário'}</Text>
         <Text style={styles.userEmail}>{user?.email || ''}</Text>
       </View>
 

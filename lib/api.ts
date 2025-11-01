@@ -27,6 +27,10 @@ export const criarAcompanhamento = async (
 export const getAcompanhamentos = async (token: string): Promise<any[]> => {
   return await getComToken('/acompanhamentos', token);
 };
+
+export const getAcompanhamentosPaciente = async (pacienteId: number, token: string): Promise<any[]> => {
+  return await getComToken(`/acompanhamentos/paciente/${pacienteId}`, token);
+};
 /**
  * Buscar dados do usuário pelo ID
  */
@@ -37,22 +41,34 @@ export const getAcompanhamentos = async (token: string): Promise<any[]> => {
 export const getAgendamentosUsuario = async (usuarioId: number, token: string): Promise<any[]> => {
   return await getComToken(`/agendamentos?usuarioId=${usuarioId}`, token);
 };
+
+/**
+ * Buscar agendamentos do psicólogo autenticado
+ */
+export const getAgendamentosPsicologo = async (token: string): Promise<any[]> => {
+  const psicologo = await getPsicologoMe(token);
+  return await getComToken(`/agendamentos?profissionalId=${psicologo.id}`, token);
+};
 /**
  * Criar agendamento
  */
-export const criarAgendamento = async (dados: { profissional_id: number; data_hora: string }, token: string): Promise<any> => {
+export const criarAgendamento = async (
+  dados: { profissional_id?: number; data_hora: string; paciente_id?: number },
+  token: string
+): Promise<any> => {
   return await apiFetch('/agendamentos', 'POST', dados, token);
 };
 
 /**
  * Listar profissionais
  */
-export const listarPsicologosPublicos = async (filtro?: { especializacao?: string; faixa?: string }): Promise<any[]> => {
+export const listarPsicologosPublicos = async (filtro?: { especializacao?: string; faixa?: string; pacienteId?: number }, token?: string): Promise<any[]> => {
   const params = new URLSearchParams();
   if (filtro?.especializacao) params.append('especializacao', filtro.especializacao);
   if (filtro?.faixa) params.append('faixa', filtro.faixa);
+  if (filtro?.pacienteId) params.append('pacienteId', filtro.pacienteId.toString());
   const qs = params.toString();
-  return await apiFetch(`/psicologos/public${qs ? `?${qs}` : ''}`);
+  return await apiFetch(`/psicologos/public${qs ? `?${qs}` : ''}`, 'GET', undefined, token);
 };
 
 /**
@@ -201,6 +217,10 @@ export const updatePsicologoMe = async (
   token: string
 ): Promise<any> => {
   return await apiFetch('/psicologos/me', 'PUT', dados, token);
+};
+
+export const getPsicologoMe = async (token: string): Promise<any> => {
+  return await apiFetch('/psicologos/me', 'GET', undefined, token);
 };
 
 export const listarAtendimentosDoPsicologo = async (token: string): Promise<any[]> => {

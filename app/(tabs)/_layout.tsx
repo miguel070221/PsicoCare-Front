@@ -1,13 +1,30 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect } from 'react';
+import { View, ActivityIndicator } from 'react-native';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function TabLayout() {
   const { user, isLoading } = useAuth();
+  const router = useRouter();
   const role = user?.role;
-  if (isLoading || !role) {
-    // Evita piscar itens indevidos antes do contexto carregar
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.replace('/login');
+    }
+  }, [isLoading, user, router]);
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
+        <ActivityIndicator size="large" color={Colors.tint} />
+      </View>
+    );
+  }
+
+  if (!role) {
     return null;
   }
   return (
@@ -42,89 +59,116 @@ export default function TabLayout() {
         },
       }}
     >
-      {role !== 'psicologo' && (
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Início',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="home-outline" color={color} size={size} />
-            ),
-          }}
-        />
-      )}
-
-      {role !== 'psicologo' && (
-        <Tabs.Screen
-          name="psicologos"
-          options={{
-            title: 'Psicólogos',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="people-outline" color={color} size={size} />
-            ),
-          }}
-        />
-      )}
-
-      {role === 'psicologo' && (
-        <Tabs.Screen
-          name="home-psicologo"
-          options={{
-            title: 'Painel',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="briefcase-outline" color={color} size={size} />
-            ),
-          }}
-        />
-      )}
-
-      {role === 'psicologo' && (
-        <Tabs.Screen
-          name="solicitacoes-psicologo"
-          options={{
-            title: 'Solicitações',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="mail-unread-outline" color={color} size={size} />
-            ),
-          }}
-        />
-      )}
-
-      {role !== 'psicologo' && (
-        <Tabs.Screen
-          name="emergencias"
-          options={{
-            title: 'Emergências',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="warning-outline" color={color} size={size} />
-            ),
-          }}
-        />
-      )}
-
-      {role !== 'psicologo' && (
-        <Tabs.Screen
-          name="avaliacoes"
-          options={{
-            title: 'Avaliações',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="star-outline" color={color} size={size} />
-            ),
-          }}
-        />
-      )}
-
-      {(
-        <Tabs.Screen
-          name="perfil"
-          options={{
-            title: 'Perfil',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="person-circle-outline" color={color} size={size} />
-            ),
-          }}
-        />
-      )}
+      {/* Declarar todas as telas uma vez e esconder via href:null */}
+      <Tabs.Screen
+        name="index"
+        options={{
+          href: role === 'psicologo' ? null : undefined,
+          title: 'Início',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="psicologos"
+        options={{
+          href: role === 'psicologo' ? null : undefined,
+          title: 'Psicólogos',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="people-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="emergencias"
+        options={{
+          href: role === 'psicologo' ? null : undefined,
+          title: 'Emergências',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="warning-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="avaliacoes"
+        options={{
+          href: role === 'psicologo' ? null : undefined,
+          title: 'Avaliações',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="star-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="home-psicologo"
+        options={{
+          href: role !== 'psicologo' ? null : undefined,
+          title: 'Painel',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="briefcase-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="pacientes"
+        options={{
+          href: role !== 'psicologo' ? null : undefined,
+          title: 'Pacientes',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="people-circle-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="solicitacoes-psicologo"
+        options={{
+          href: role !== 'psicologo' ? null : undefined,
+          title: 'Solicitações',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="mail-unread-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="acompanhamentos-psicologo"
+        options={{
+          href: role !== 'psicologo' ? null : undefined,
+          title: 'Acompanhamentos',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="document-text-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="notas-sessoes"
+        options={{
+          href: role !== 'psicologo' ? null : undefined,
+          title: 'Notas',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="create-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="relatorios-estatisticas"
+        options={{
+          href: role !== 'psicologo' ? null : undefined,
+          title: 'Relatórios',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="stats-chart-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="perfil"
+        options={{
+          title: 'Perfil',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-circle-outline" color={color} size={size} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

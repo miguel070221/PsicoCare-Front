@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, TextInput, Alert, ActivityIndicator } from 'react-native';
 // Removido DateTimePicker: mini calendário sem dependências
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
-import { toggleDisponibilidade, listarAtendimentosDoPsicologo, criarAgendamento } from '../../lib/api';
+import { toggleDisponibilidade, listarAtendimentosDoPsicologo, criarAgendamento, getSlotsDisponiveis, getPsicologoMe } from '../../lib/api';
+import { formatarHora } from '../../lib/formatters';
+import AppHeader from '../../components/AppHeader';
 
 export default function HomePsicologoTab() {
   const { user, token } = useAuth();
@@ -15,6 +17,9 @@ export default function HomePsicologoTab() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState<number>(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState<number>(new Date().getFullYear());
+  const [slotsDisponiveis, setSlotsDisponiveis] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [psicologoId, setPsicologoId] = useState<number | null>(null);
 
   const getMonthDays = (year: number, month: number) => {
     const first = new Date(year, month, 1);
@@ -35,11 +40,44 @@ export default function HomePsicologoTab() {
       try {
         const data = await listarAtendimentosDoPsicologo(token);
         setAtendimentos(data || []);
+        // Buscar o ID do psicólogo
+        const psicologo = await getPsicologoMe(token);
+        if (psicologo?.id) {
+          setPsicologoId(psicologo.id);
+        }
       } catch {
         setAtendimentos([]);
       }
     })();
   }, [token]);
+
+  // Carregar slots disponíveis quando paciente e data forem selecionados
+  useEffect(() => {
+    const carregarSlots = async () => {
+      if (!psicologoId || !dataInput) {
+        setSlotsDisponiveis([]);
+        return;
+      }
+
+      setLoadingSlots(true);
+      try {
+        // Converter DD-MM-AAAA para formato ISO
+        const [dd, mm, yyyy] = dataInput.split('-');
+        const dataISO = `${yyyy}-${mm}-${dd}`;
+        
+        // Usar o ID do psicólogo obtido
+        const response = await getSlotsDisponiveis(psicologoId, dataISO);
+        setSlotsDisponiveis(response.slots || []);
+      } catch (e: any) {
+        console.error('Erro ao carregar slots:', e);
+        setSlotsDisponiveis([]);
+      } finally {
+        setLoadingSlots(false);
+      }
+    };
+
+    carregarSlots();
+  }, [dataInput, psicologoId]);
 
   const handleToggle = async (value: boolean) => {
     setDisponivel(value);
@@ -64,13 +102,30 @@ export default function HomePsicologoTab() {
   };
 
   const handleAgendarParaPaciente = async () => {
-    if (!token) {
-      Alert.alert('Erro', 'Você precisa estar autenticado.');
+    // Validação de campos obrigatórios
+    const camposFaltando: string[] = [];
+    
+    if (!pacienteSelecionado) {
+      camposFaltando.push('Paciente');
+    }
+    if (!dataInput || !dataInput.trim()) {
+      camposFaltando.push('Data');
+    }
+    if (!horaInput || !horaInput.trim()) {
+      camposFaltando.push('Hora');
+    }
+    
+    if (camposFaltando.length > 0) {
+      Alert.alert(
+        'Campos obrigatórios',
+        `Por favor, preencha os seguintes campos:\n\n• ${camposFaltando.join('\n• ')}`,
+        [{ text: 'OK' }]
+      );
       return;
     }
-
-    if (!pacienteSelecionado) {
-      Alert.alert('Erro', 'Selecione um paciente.');
+    
+    if (!token) {
+      Alert.alert('Erro', 'Você precisa estar autenticado.');
       return;
     }
 
@@ -89,10 +144,18 @@ export default function HomePsicologoTab() {
       return;
     }
 
+    // Verificar se o horário está disponível
+    if (slotsDisponiveis.length > 0 && !slotsDisponiveis.includes(horaInput)) {
+      Alert.alert('Erro', 'Este horário não está disponível. Por favor, escolha um dos horários disponíveis.');
+      return;
+    }
+
     try {
       // Converter DD-MM-AAAA para ISO
       const [dd, mm, yyyy] = dataInput.split('-');
       const iso = new Date(`${yyyy}-${mm}-${dd}T${horaInput}:00`).toISOString();
+      
+      console.log('Criando agendamento:', { paciente_id: pacienteSelecionado, data_hora: iso });
       
       await criarAgendamento({ data_hora: iso, paciente_id: pacienteSelecionado }, token);
       
@@ -103,6 +166,7 @@ export default function HomePsicologoTab() {
       setDataInput('');
       setHoraInput('');
     } catch (e: any) {
+      console.error('Erro ao criar agendamento:', e);
       const mensagem = e?.message || e?.response?.data?.erro || 'Falha ao criar agendamento. Tente novamente.';
       Alert.alert('Erro', mensagem);
     }
@@ -110,7 +174,7 @@ export default function HomePsicologoTab() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
-      <Text style={styles.title}>Painel do Psicólogo</Text>
+      <AppHeader title="Painel do Psicólogo" subtitle="Gerencie seus pacientes e agendamentos" />
       <View style={styles.row}>
         <Text style={styles.label}>Disponível</Text>
         <Switch value={disponivel} onValueChange={handleToggle} />
@@ -184,6 +248,7 @@ export default function HomePsicologoTab() {
                         const yyyy = String(d.getFullYear());
                         setDataInput(`${dd}-${mm}-${yyyy}`);
                         setShowCalendar(false);
+                        setHoraInput(''); // Limpar hora quando mudar data
                       }
                     }}
                     disabled={isPast}
@@ -204,15 +269,76 @@ export default function HomePsicologoTab() {
           </View>
         )}
         <Text style={styles.formLabel}>Hora (HH:MM)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="14:30"
-          value={horaInput}
-          onChangeText={setHoraInput}
-          keyboardType="numeric"
-          maxLength={5}
-        />
-        <Text style={styles.hintText}>Exemplo: 09:00, 14:30, 18:00</Text>
+        {loadingSlots ? (
+          <Text style={styles.hintText}>Carregando horários disponíveis...</Text>
+        ) : slotsDisponiveis.length > 0 ? (
+          <>
+            <Text style={styles.hintText}>Selecione um horário disponível:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.slotsContainer}>
+              {slotsDisponiveis.map((slot) => (
+                <TouchableOpacity
+                  key={slot}
+                  style={[
+                    styles.slotButton,
+                    horaInput === slot && styles.slotButtonSelected,
+                  ]}
+                  onPress={() => setHoraInput(slot)}
+                >
+                  <Text
+                    style={[
+                      styles.slotButtonText,
+                      horaInput === slot && styles.slotButtonTextSelected,
+                    ]}
+                  >
+                    {slot}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <Text style={styles.hintText}>Ou digite manualmente:</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="14:30"
+              value={horaInput}
+              onChangeText={(text) => {
+                const formatado = formatarHora(text);
+                setHoraInput(formatado);
+              }}
+              keyboardType="numeric"
+              maxLength={5}
+            />
+          </>
+        ) : dataInput ? (
+          <>
+            <Text style={styles.hintText}>Nenhum horário disponível para esta data. Configure horários na aba "Horários".</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="14:30"
+              value={horaInput}
+              onChangeText={(text) => {
+                const formatado = formatarHora(text);
+                setHoraInput(formatado);
+              }}
+              keyboardType="numeric"
+              maxLength={5}
+            />
+          </>
+        ) : (
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder="14:30"
+              value={horaInput}
+              onChangeText={(text) => {
+                const formatado = formatarHora(text);
+                setHoraInput(formatado);
+              }}
+              keyboardType="numeric"
+              maxLength={5}
+            />
+            <Text style={styles.hintText}>Selecione uma data para ver horários disponíveis</Text>
+          </>
+        )}
         <TouchableOpacity
           style={[
             styles.createBtn,
@@ -245,6 +371,32 @@ const styles = StyleSheet.create({
   formHint: { color: Colors.textSecondary, marginBottom: 6 },
   input: { backgroundColor: Colors.cardAlt, borderRadius: 8, padding: 10, marginTop: 6, color: Colors.text, borderWidth: 1, borderColor: Colors.border },
   hintText: { fontSize: 12, color: Colors.textSecondary, marginTop: 4, fontStyle: 'italic' },
+  slotsContainer: {
+    marginVertical: 8,
+    marginBottom: 12,
+  },
+  slotButton: {
+    backgroundColor: Colors.cardAlt,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  slotButtonSelected: {
+    backgroundColor: Colors.tint,
+    borderColor: Colors.tint,
+  },
+  slotButtonText: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  slotButtonTextSelected: {
+    color: Colors.card,
+    fontWeight: '700',
+  },
   createBtn: { backgroundColor: Colors.tint, borderRadius: 8, padding: 12, alignItems: 'center', marginTop: 10 },
   createBtnDisabled: { opacity: 0.5 },
   createBtnText: { color: Colors.card, fontWeight: '700' },

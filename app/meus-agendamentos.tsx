@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, FlatList, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, FlatList, Alert, ScrollView } from 'react-native';
 import Colors from '../constants/Colors';
 import { useAuth } from './contexts/AuthContext';
 import { getAgendamentosUsuario, criarAgendamento } from '../lib/api';
+import { formatarHora, formatarData } from '../lib/formatters';
+import AppHeader from '../components/AppHeader';
 
 function getMonthDays(year: number, month: number) {
   const days = [];
@@ -51,16 +53,38 @@ export default function MeusAgendamentos() {
   }
 
   async function handleCriarConsulta() {
-    if (!selectedDate || !hora) {
-      Alert.alert('Preencha dia e hora');
+    // Validação de campos obrigatórios
+    const camposFaltando: string[] = [];
+    
+    if (!selectedDate) {
+      camposFaltando.push('Dia');
+    }
+    if (!hora || !hora.trim()) {
+      camposFaltando.push('Hora');
+    }
+    
+    if (camposFaltando.length > 0) {
+      Alert.alert(
+        'Campos obrigatórios',
+        `Por favor, preencha os seguintes campos:\n\n• ${camposFaltando.join('\n• ')}`,
+        [{ text: 'OK' }]
+      );
       return;
     }
+    
+    if (!token) {
+      Alert.alert('Erro', 'Você precisa estar autenticado.');
+      return;
+    }
+    
     try {
-      await criarAgendamento({ profissional_id: 1, data_hora: `${selectedDate.toISOString().split('T')[0]}T${hora}` }, token!);
+      await criarAgendamento({ profissional_id: 1, data_hora: `${selectedDate!.toISOString().split('T')[0]}T${hora}` }, token);
       setModalVisible(false);
-      Alert.alert('Consulta criada!');
+      Alert.alert('Sucesso', 'Consulta criada!');
+      setHora('');
+      setSelectedDate(null);
     } catch (e: any) {
-      Alert.alert('Erro', e.message);
+      Alert.alert('Erro', e.message || 'Erro ao criar consulta.');
     }
   }
 
@@ -70,8 +94,8 @@ export default function MeusAgendamentos() {
   });
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}><Text style={styles.headerTitle}>Agenda</Text></View>
+    <ScrollView style={styles.container}>
+      <AppHeader title="Agenda" subtitle="Gerencie seus agendamentos" />
       <View style={styles.calendarRow}>
         <View style={styles.calendarBox}>
           <Text style={styles.monthTitle}>Outubro {year}</Text>
@@ -125,15 +149,33 @@ export default function MeusAgendamentos() {
             <Text style={styles.modalTitle}>Nova Consulta</Text>
             <TextInput
               style={styles.input}
-              placeholder="Dia (AAAA-MM-DD)"
-              value={selectedDate ? selectedDate.toISOString().split('T')[0] : ''}
-              onChangeText={d => setSelectedDate(new Date(d))}
+              placeholder="Dia (DD/MM/AAAA)"
+              value={selectedDate ? (() => {
+                const dd = String(selectedDate.getDate()).padStart(2, '0');
+                const mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                const yyyy = String(selectedDate.getFullYear());
+                return `${dd}/${mm}/${yyyy}`;
+              })() : ''}
+              onChangeText={(text) => {
+                const formatado = formatarData(text);
+                if (formatado.length === 10) {
+                  const [dd, mm, yyyy] = formatado.split('/');
+                  setSelectedDate(new Date(Number(yyyy), Number(mm) - 1, Number(dd)));
+                }
+              }}
+              keyboardType="numeric"
+              maxLength={10}
             />
             <TextInput
               style={styles.input}
               placeholder="Hora (HH:MM)"
               value={hora}
-              onChangeText={setHora}
+              onChangeText={(text) => {
+                const formatado = formatarHora(text);
+                setHora(formatado);
+              }}
+              keyboardType="numeric"
+              maxLength={5}
             />
             <TouchableOpacity style={styles.modalBtn} onPress={handleCriarConsulta}>
               <Text style={styles.modalBtnText}>Salvar</Text>
@@ -144,14 +186,12 @@ export default function MeusAgendamentos() {
           </View>
         </View>
       </Modal>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background, padding: 8 },
-  header: { backgroundColor: Colors.headerBlue, padding: 16, borderRadius: 12, marginBottom: 12 },
-  headerTitle: { color: Colors.card, fontSize: 22, fontWeight: 'bold' },
   calendarRow: { flexDirection: 'row', gap: 16 },
   calendarBox: { flex: 2, backgroundColor: Colors.card, borderRadius: 12, padding: 12 },
   monthTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.textSecondary, marginBottom: 8 },

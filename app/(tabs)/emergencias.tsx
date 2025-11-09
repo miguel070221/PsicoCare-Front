@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Linking, ScrollView } from 'react-native';
 import Colors from '../../constants/Colors';
+import AppHeader from '../../components/AppHeader';
 
 export default function Emergencias() {
   const ligar = () => {
@@ -7,10 +8,8 @@ export default function Emergencias() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerTop}>
-        <Text style={styles.headerTopTitle}>Emergências</Text>
-      </View>
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: 24 }}>
+      <AppHeader title="Emergências" subtitle="Ajuda imediata e suporte" />
       <Text style={styles.title}>Emergência Psicológica</Text>
       <Text style={styles.description}>
         Se você está passando por uma crise ou precisa de ajuda imediata, entre em contato com um profissional ou ligue para o CVV (Centro de Valorização da Vida).
@@ -19,14 +18,13 @@ export default function Emergencias() {
       <TouchableOpacity onPress={ligar} style={styles.button}>
         <Text style={styles.buttonText}>Ligar para 188</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 24,
     backgroundColor: Colors.background,
   },
   title: {
@@ -53,18 +51,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 15,
-  },
-  headerTop: {
-    backgroundColor: Colors.headerBlue,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'flex-start',
-    borderRadius: 6,
-    marginBottom: 12,
-  },
-  headerTopTitle: {
-    color: Colors.card,
-    fontSize: 18,
-    fontWeight: '700',
   },
 });

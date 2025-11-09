@@ -7,6 +7,7 @@ import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 import { useEffect, useState } from 'react';
 import { toggleDisponibilidade, getPsicologoMe } from '../../lib/api';
+import AppHeader from '../../components/AppHeader';
 
 export default function Perfil() {
   const router = useRouter();
@@ -53,9 +54,7 @@ export default function Perfil() {
 
   return (
     <ScrollView style={styles.container}>
-      <View style={styles.headerTop}>
-        <Text style={styles.headerTopTitle}>Perfil</Text>
-      </View>
+      <AppHeader title="Perfil" subtitle="Gerencie suas informações" />
       <View style={styles.headerContainer}>
         <Ionicons name="person-circle" size={80} color={Colors.tint} />
         <Text style={styles.userName}>{(user?.role === 'psicologo' ? profissional?.nome : user?.nome) || 'Usuário'}</Text>
@@ -174,16 +173,5 @@ const styles = StyleSheet.create({
     marginLeft: 15,
     fontSize: 16,
     color: Colors.text,
-  },
-  headerTop: {
-    backgroundColor: Colors.headerBlue,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'flex-start',
-  },
-  headerTopTitle: {
-    color: Colors.card,
-    fontSize: 18,
-    fontWeight: '700',
   },
 });

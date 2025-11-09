@@ -60,13 +60,21 @@ export const criarAgendamento = async (
 };
 
 /**
+ * Cancelar agendamento
+ */
+export const cancelarAgendamento = async (agendamentoId: number, token: string): Promise<any> => {
+  return await apiFetch(`/agendamentos/${agendamentoId}/cancelar`, 'PUT', {}, token);
+};
+
+/**
  * Listar profissionais
  */
-export const listarPsicologosPublicos = async (filtro?: { especializacao?: string; faixa?: string; pacienteId?: number }, token?: string): Promise<any[]> => {
+export const listarPsicologosPublicos = async (filtro?: { especializacao?: string; faixa?: string; pacienteId?: number; apenasVinculados?: boolean }, token?: string): Promise<any[]> => {
   const params = new URLSearchParams();
   if (filtro?.especializacao) params.append('especializacao', filtro.especializacao);
   if (filtro?.faixa) params.append('faixa', filtro.faixa);
   if (filtro?.pacienteId) params.append('pacienteId', filtro.pacienteId.toString());
+  if (filtro?.apenasVinculados) params.append('apenasVinculados', 'true');
   const qs = params.toString();
   return await apiFetch(`/psicologos/public${qs ? `?${qs}` : ''}`, 'GET', undefined, token);
 };
@@ -225,6 +233,156 @@ export const getPsicologoMe = async (token: string): Promise<any> => {
 
 export const listarAtendimentosDoPsicologo = async (token: string): Promise<any[]> => {
   return await apiFetch('/atendimentos/psicologo/meus', 'GET', undefined, token);
+};
+
+export const listarAtendimentosDoPaciente = async (token: string): Promise<any[]> => {
+  return await apiFetch('/atendimentos/paciente/meus', 'GET', undefined, token);
+};
+
+export const listarPsicologosVinculadosPorAtendimentos = async (token: string): Promise<any[]> => {
+  console.log('API: listarPsicologosVinculadosPorAtendimentos chamado');
+  console.log('API: token presente:', !!token);
+  console.log('API: URL:', `${BASE_URL}/psicologos/vinculados`);
+  
+  try {
+    const result = await apiFetch('/psicologos/vinculados', 'GET', undefined, token);
+    console.log('API: Resultado recebido:', result);
+    console.log('API: Tipo:', Array.isArray(result) ? 'array' : typeof result);
+    console.log('API: Quantidade:', Array.isArray(result) ? result.length : 'N/A');
+    
+    // Garantir que sempre retorne um array
+    if (Array.isArray(result)) {
+      return result;
+    } else if (result === null || result === undefined) {
+      console.warn('API: Resultado é null/undefined, retornando array vazio');
+      return [];
+    } else {
+      console.warn('API: Resultado não é array, tentando converter:', result);
+      return [];
+    }
+  } catch (error: any) {
+    console.error('API: Erro ao buscar psicólogos vinculados:', error);
+    console.error('API: Mensagem:', error?.message);
+    console.error('API: Status:', error?.response?.status);
+    console.error('API: Dados:', error?.response?.data);
+    // Retornar array vazio em caso de erro para permitir fallback
+    return [];
+  }
+};
+
+/**
+ * Horários disponíveis do psicólogo
+ */
+export const listarHorariosDisponiveis = async (token: string): Promise<any[]> => {
+  return await apiFetch('/horarios-disponiveis', 'GET', undefined, token);
+};
+
+export const criarHorarioDisponivel = async (
+  dados: { dia_semana: number; hora_inicio: string; hora_fim: string; duracao_minutos?: number; ativo?: boolean },
+  token: string
+): Promise<any> => {
+  return await apiFetch('/horarios-disponiveis', 'POST', dados, token);
+};
+
+export const atualizarHorarioDisponivel = async (
+  id: number,
+  dados: { dia_semana?: number; hora_inicio?: string; hora_fim?: string; duracao_minutos?: number; ativo?: boolean },
+  token: string
+): Promise<any> => {
+  return await apiFetch(`/horarios-disponiveis/${id}`, 'PUT', dados, token);
+};
+
+export const removerHorarioDisponivel = async (id: number, token: string): Promise<any> => {
+  console.log('API: Removendo horário', id);
+  console.log('API: URL completa:', `${BASE_URL}/horarios-disponiveis/${id}`);
+  console.log('API: Método: DELETE');
+  console.log('API: Token presente:', !!token);
+  
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+
+    console.log('API: Fazendo requisição DELETE...');
+    const response = await fetch(`${BASE_URL}/horarios-disponiveis/${id}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    console.log('API: Status da resposta:', response.status);
+    console.log('API: Response ok?', response.ok);
+
+    if (response.status === 204) {
+      console.log('API: Resposta 204 (No Content)');
+      return { ok: true };
+    }
+
+    const raw = await response.text();
+    console.log('API: Resposta raw:', raw);
+    
+    let data: any = null;
+    if (raw && raw.length > 0) {
+      try {
+        data = JSON.parse(raw);
+        console.log('API: Dados parseados:', data);
+      } catch {
+        data = raw;
+        console.log('API: Resposta não é JSON');
+      }
+    }
+
+    if (!response.ok) {
+      console.error('API: Resposta não OK');
+      const msg = (data && (data.erro || data.message)) || (typeof data === 'string' ? data : 'Erro na requisição');
+      throw new Error(msg);
+    }
+
+    console.log('API: Sucesso!', data);
+    return data;
+  } catch (error: any) {
+    console.error('API: Erro ao remover horário:', error);
+    throw error;
+  }
+};
+
+export const getSlotsDisponiveis = async (psicologoId: number, data: string): Promise<{ slots: string[] }> => {
+  return await apiFetch(`/horarios-disponiveis/slots?psicologoId=${psicologoId}&data=${data}`);
+};
+
+export const getDiasSemanaDisponiveis = async (psicologoId: number): Promise<{ diasSemana: number[] }> => {
+  return await apiFetch(`/horarios-disponiveis/dias-semana?psicologoId=${psicologoId}`);
+};
+
+export const listarHorariosDisponiveisPublico = async (psicologoId: number): Promise<any[]> => {
+  return await apiFetch(`/horarios-disponiveis/publico?psicologoId=${psicologoId}`);
+};
+
+/**
+ * Notas e Sessões
+ */
+export const listarNotasSessoes = async (idPaciente?: number, token?: string): Promise<any[]> => {
+  const params = idPaciente ? `?id_paciente=${idPaciente}` : '';
+  return await apiFetch(`/notas-sessoes${params}`, 'GET', undefined, token);
+};
+
+export const criarNotaSessao = async (
+  dados: { id_paciente: number; titulo: string; conteudo: string; data_sessao?: string; id_agendamento?: number },
+  token: string
+): Promise<any> => {
+  return await apiFetch('/notas-sessoes', 'POST', dados, token);
+};
+
+export const atualizarNotaSessao = async (
+  id: number,
+  dados: { titulo: string; conteudo: string; data_sessao?: string },
+  token: string
+): Promise<any> => {
+  return await apiFetch(`/notas-sessoes/${id}`, 'PUT', dados, token);
+};
+
+export const removerNotaSessao = async (id: number, token: string): Promise<any> => {
+  return await apiFetch(`/notas-sessoes/${id}`, 'DELETE', undefined, token);
 };
 
 /**

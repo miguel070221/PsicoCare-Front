@@ -1,10 +1,11 @@
 // Localização: (app)/register.tsx
 
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '../constants/Colors';
 import { cadastrarUsuario } from '../lib/api';
+import { formatarData } from '../lib/formatters';
 
 type UserType = 'paciente' | 'psicologo';
 
@@ -20,12 +21,51 @@ export default function RegisterScreen() {
   const [especialidade, setEspecialidade] = useState('');
 
   const handleRegister = async () => {
+    // Validação de campos obrigatórios
+    const camposFaltando: string[] = [];
+    
+    if (!nome || !nome.trim()) {
+      camposFaltando.push('Nome Completo');
+    }
+    if (!email || !email.trim()) {
+      camposFaltando.push('Email');
+    }
+    if (!senha || !senha.trim()) {
+      camposFaltando.push('Senha');
+    }
+    if (!telefone || !telefone.trim()) {
+      camposFaltando.push('Telefone');
+    }
+    if (!nascimento || !nascimento.trim()) {
+      camposFaltando.push('Data de Nascimento');
+    }
+    if (userType === 'psicologo' && (!crp || !crp.trim())) {
+      camposFaltando.push('Número do CRP');
+    }
+    
+    if (camposFaltando.length > 0) {
+      Alert.alert(
+        'Campos obrigatórios',
+        `Por favor, preencha os seguintes campos:\n\n• ${camposFaltando.join('\n• ')}`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
     try {
-      await cadastrarUsuario({ nome, email, senha, telefone, nascimento, tipo: userType, crp: crp || undefined, especialidade: especialidade || undefined });
+      // Converter data formatada (DD/MM/AAAA) para formato AAAA-MM-DD
+      let dataNascimento = nascimento;
+      if (dataNascimento.includes('/')) {
+        const [dd, mm, yyyy] = dataNascimento.split('/');
+        dataNascimento = `${yyyy}-${mm}-${dd}`;
+      }
+      
+      await cadastrarUsuario({ nome, email, senha, telefone, nascimento: dataNascimento, tipo: userType, crp: crp || undefined, especialidade: especialidade || undefined });
+      Alert.alert('Sucesso', 'Conta criada com sucesso!');
       router.push('/login');
     } catch (e: any) {
       // exibir erro simples
-      alert(e.message || 'Erro ao cadastrar');
+      Alert.alert('Erro', e.message || 'Erro ao cadastrar');
     }
   };
 
@@ -55,7 +95,10 @@ export default function RegisterScreen() {
   <TextInput style={styles.input} placeholder="Email" keyboardType="email-address" value={email} onChangeText={setEmail} />
   <TextInput style={styles.input} placeholder="Senha" secureTextEntry value={senha} onChangeText={setSenha} />
   <TextInput style={styles.input} placeholder="Telefone" keyboardType="phone-pad" value={telefone} onChangeText={setTelefone} />
-  <TextInput style={styles.input} placeholder="Data de nascimento (AAAA-MM-DD)" value={nascimento} onChangeText={setNascimento} />
+  <TextInput style={styles.input} placeholder="Data de nascimento (DD/MM/AAAA)" value={nascimento} onChangeText={(text) => {
+    const formatado = formatarData(text);
+    setNascimento(formatado);
+  }} keyboardType="numeric" maxLength={10} />
 
       {/* Campo de CRP Condicional */}
       {userType === 'psicologo' && (

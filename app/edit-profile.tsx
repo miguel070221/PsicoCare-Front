@@ -1,10 +1,11 @@
 
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '../constants/Colors';
 import { useAuth } from './contexts/AuthContext';
 import { updatePacienteMe, updatePsicologoMe } from '../lib/api';
+import AppHeader from '../components/AppHeader';
 
 
 export default function EditarPerfilScreen() {
@@ -21,6 +22,29 @@ export default function EditarPerfilScreen() {
   // Atualização do contexto após salvar (forçando recarregar o perfil)
   const handleSalvar = async () => {
     if (!user || !token) return;
+    
+    // Validação de campos obrigatórios
+    const camposFaltando: string[] = [];
+    
+    if (!nome || !nome.trim()) {
+      camposFaltando.push('Nome');
+    }
+    if (!email || !email.trim()) {
+      camposFaltando.push('Email');
+    }
+    if (user.role === 'psicologo' && (!crp || !crp.trim())) {
+      camposFaltando.push('CRP');
+    }
+    
+    if (camposFaltando.length > 0) {
+      Alert.alert(
+        'Campos obrigatórios',
+        `Por favor, preencha os seguintes campos:\n\n• ${camposFaltando.join('\n• ')}`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
     setLoading(true);
     try {
       if (user.role === 'psicologo') {
@@ -40,8 +64,8 @@ export default function EditarPerfilScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Editar Perfil</Text>
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: 24 }}>
+      <AppHeader title="Editar Perfil" subtitle="Atualize suas informações" />
       <TextInput
         style={styles.input}
         placeholder="Nome"
@@ -83,7 +107,7 @@ export default function EditarPerfilScreen() {
       <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()} disabled={loading}>
         <Text style={styles.cancelButtonText}>Cancelar</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -91,15 +115,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
-    padding: 24,
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 24,
-    color: Colors.text,
-    textAlign: 'center',
   },
   input: {
     backgroundColor: Colors.cardAlt,

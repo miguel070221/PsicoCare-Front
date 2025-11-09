@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import Colors from '../constants/Colors';
 import { useAuth } from './contexts/AuthContext';
+import AppHeader from '../components/AppHeader';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -25,8 +26,7 @@ export default function AdminDashboard() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.header}>Painel do Administrador</Text>
-      <Text style={styles.subheader}>Bem-vindo, {user?.nome || 'Administrador'}!</Text>
+      <AppHeader title="Painel do Administrador" subtitle={`Bem-vindo, ${user?.nome || 'Administrador'}!`} />
       <View style={styles.section}>
         <TouchableOpacity style={styles.button} onPress={handleGerenciarUsuarios}>
           <Text style={styles.buttonText}>Gerenciar Usuários</Text>
@@ -56,18 +56,6 @@ const styles = StyleSheet.create({
   content: {
     padding: 24,
     alignItems: 'center',
-  },
-  header: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.headerBlue,
-    marginBottom: 12,
-    marginTop: 16,
-  },
-  subheader: {
-    fontSize: 18,
-    color: Colors.textSecondary,
-    marginBottom: 24,
   },
   section: {
     width: '100%',

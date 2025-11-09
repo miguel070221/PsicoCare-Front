@@ -4,6 +4,8 @@ import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 import { listarAtendimentosDoPsicologo } from '../../lib/api';
 import { useRouter } from 'expo-router';
+import AppHeader from '../../components/AppHeader';
+import EmptyState from '../../components/EmptyState';
 
 export default function PacientesTab() {
   const { token } = useAuth();
@@ -32,9 +34,9 @@ export default function PacientesTab() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
-      <Text style={styles.title}>Pacientes vinculados</Text>
+      <AppHeader title="Pacientes" subtitle="Visualize seus pacientes vinculados" />
       {pacientes.length === 0 ? (
-        <Text style={styles.note}>Nenhum paciente vinculado.</Text>
+        <EmptyState icon="👥" title="Nenhum paciente vinculado" hint="Aceite solicitações para ver pacientes" />
       ) : (
         pacientes.map((p: any) => (
           <TouchableOpacity key={p.id} style={styles.card} onPress={() => router.push(`/pacientes/${p.id}`)}>
@@ -55,6 +57,8 @@ const styles = StyleSheet.create({
   cardName: { color: Colors.text, fontWeight: '700', fontSize: 16 },
   cardMeta: { color: Colors.textSecondary, marginTop: 4 },
 });
+
+
 
 
 

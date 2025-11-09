@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 import { listarSolicitacoesPendentesPsicologo, aceitarSolicitacaoPsicologo, recusarSolicitacaoPsicologo } from '../../lib/api';
+import AppHeader from '../../components/AppHeader';
+import EmptyState from '../../components/EmptyState';
 
 export default function SolicitacoesPsicologoTab() {
   const { token } = useAuth();
@@ -34,22 +36,25 @@ export default function SolicitacoesPsicologoTab() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
-      <Text style={styles.title}>Solicitações Pendentes</Text>
-      {items.map((s) => (
-        <View key={s.id} style={styles.card}>
-          <Text style={styles.name}>{s.paciente_nome}</Text>
-          <Text style={styles.meta}>Preferência: {s.preferencia_comunicacao} / {s.contato_preferido || '-'}</Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-            <TouchableOpacity onPress={() => aceitar(s)} style={{ backgroundColor: Colors.tint, padding: 10, borderRadius: 8 }}>
-              <Text style={{ color: Colors.card }}>Aceitar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => recusar(s)} style={{ backgroundColor: Colors.cardAlt, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: Colors.border }}>
-              <Text style={{ color: Colors.text }}>Recusar</Text>
-            </TouchableOpacity>
+      <AppHeader title="Solicitações" subtitle="Gerencie solicitações de atendimento" />
+      {items.length === 0 ? (
+        <EmptyState icon="📧" title="Sem solicitações pendentes" hint="Novas solicitações aparecerão aqui" />
+      ) : (
+        items.map((s) => (
+          <View key={s.id} style={styles.card}>
+            <Text style={styles.name}>{s.paciente_nome}</Text>
+            <Text style={styles.meta}>Preferência: {s.preferencia_comunicacao} / {s.contato_preferido || '-'}</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <TouchableOpacity onPress={() => aceitar(s)} style={{ backgroundColor: Colors.tint, padding: 10, borderRadius: 8 }}>
+                <Text style={{ color: Colors.card }}>Aceitar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => recusar(s)} style={{ backgroundColor: Colors.cardAlt, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: Colors.border }}>
+                <Text style={{ color: Colors.text }}>Recusar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      ))}
-      {items.length === 0 && <Text style={styles.empty}>Sem solicitações pendentes.</Text>}
+        ))
+      )}
     </ScrollView>
   );
 }

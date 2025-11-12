@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { useCallback, useState, useEffect, useMemo } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../../components/AppHeader';
 import EmptyState from '../../components/EmptyState';
@@ -54,10 +54,14 @@ export default function Dashboard() {
     fetchData();
   }, [user, token]);
 
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+  // Memoizar cálculos para melhor performance
+  const hoje = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
   
-  const agendamentosFuturos = agendamentos.filter((a) => {
+  const agendamentosFuturos = useMemo(() => agendamentos.filter((a) => {
     // Tentar pegar data_hora primeiro, depois data
     const dataHora = a.data_hora || a.data;
     if (!dataHora) return false;
@@ -107,20 +111,20 @@ export default function Dashboard() {
     } catch {
       return 0;
     }
-  });
+  }), [agendamentos]);
 
-  const proximoAgendamento = agendamentosFuturos[0];
+  const proximoAgendamento = useMemo(() => agendamentosFuturos[0], [agendamentosFuturos]);
   const totalAgendamentos = agendamentos.length;
   const totalAcompanhamentos = acompanhamentos.length;
   const totalPsicologos = psicologosVinculados.length;
-  const ultimoAcompanhamento = acompanhamentos[0];
+  const ultimoAcompanhamento = useMemo(() => acompanhamentos[0], [acompanhamentos]);
 
-  const dataHoje = hoje.toLocaleDateString('pt-BR', { 
+  const dataHoje = useMemo(() => hoje.toLocaleDateString('pt-BR', { 
     day: '2-digit', 
     month: '2-digit', 
     year: 'numeric',
     weekday: 'long'
-  });
+  }), [hoje]);
 
   const formatarDataHora = (data: string, horario?: string) => {
     if (!data) return 'Data não informada';
@@ -332,13 +336,16 @@ export default function Dashboard() {
   );
 }
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isSmallScreen = SCREEN_WIDTH < 360;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
   },
   scrollContent: {
-    padding: 20,
+    padding: isSmallScreen ? 16 : 20,
     paddingBottom: 40,
   },
   loadingContainer: {
@@ -356,7 +363,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   welcomeText: {
-    fontSize: 28,
+    fontSize: isSmallScreen ? 24 : 28,
     fontWeight: 'bold',
     color: Colors.text,
     marginBottom: 4,

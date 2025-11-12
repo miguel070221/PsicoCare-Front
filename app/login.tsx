@@ -1,15 +1,19 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useRef, useEffect } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Colors from '../constants/Colors';
 import { loginPaciente, loginPsicologo, loginAdmin } from '../lib/api';
 import { useAuth } from './contexts/AuthContext';
+import Logo from '../components/Logo';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [tipo, setTipo] = useState<'paciente' | 'psicologo' | 'admin'>('paciente');
+  const [logoClicks, setLogoClicks] = useState(0);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
   const { signIn } = useAuth();
 
@@ -25,6 +29,42 @@ export default function Login() {
       verify();
     }, [])
   );
+
+  // Reset contador de cliques após 3 segundos sem cliques
+  useEffect(() => {
+    if (logoClicks > 0 && !showAdmin) {
+      // Limpar timeout anterior
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+      
+      // Criar novo timeout
+      clickTimeoutRef.current = setTimeout(() => {
+        setLogoClicks(0);
+      }, 3000);
+    }
+    
+    // Cleanup
+    return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+    };
+  }, [logoClicks, showAdmin]);
+
+  const handleLogoClick = () => {
+    const newClicks = logoClicks + 1;
+    setLogoClicks(newClicks);
+    
+    if (newClicks >= 7) {
+      setShowAdmin(true);
+      setLogoClicks(0);
+      // Limpar timeout se existir
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+    }
+  };
 
   const handleLogin = async () => {
     if (!email || !senha) {
@@ -59,6 +99,15 @@ export default function Login() {
 
   return (
     <View style={styles.container}>
+      {/* Logo PsicoCare - Clicável para mostrar botão admin */}
+      <TouchableOpacity 
+        style={styles.logoContainer} 
+        onPress={handleLogoClick}
+        activeOpacity={0.7}
+      >
+        <Logo size="large" showText={true} />
+      </TouchableOpacity>
+
       <Text style={styles.title}>Login</Text>
 
       <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 12 }}>
@@ -68,9 +117,11 @@ export default function Login() {
         <TouchableOpacity onPress={() => setTipo('psicologo')} style={[styles.roleBtn, tipo === 'psicologo' && { backgroundColor: Colors.tint }]}>
           <Text style={[styles.roleText, tipo === 'psicologo' && { color: Colors.card }]}>Psicólogo</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setTipo('admin')} style={[styles.roleBtn, tipo === 'admin' && { backgroundColor: Colors.tint }]}>
-          <Text style={[styles.roleText, tipo === 'admin' && { color: Colors.card }]}>Admin</Text>
-        </TouchableOpacity>
+        {showAdmin && (
+          <TouchableOpacity onPress={() => setTipo('admin')} style={[styles.roleBtn, tipo === 'admin' && { backgroundColor: Colors.tint }]}>
+            <Text style={[styles.roleText, tipo === 'admin' && { color: Colors.card }]}>Admin</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <TextInput
@@ -108,6 +159,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
     backgroundColor: Colors.background,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 40,
   },
   title: {
     fontSize: 28,

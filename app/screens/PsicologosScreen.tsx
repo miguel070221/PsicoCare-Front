@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal } from 'react-native';
+import React, { useEffect, useState, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Dimensions } from 'react-native';
 import Colors from '../../constants/Colors';
 import { listarPsicologosPublicos, solicitarAtendimento } from '../../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -19,7 +19,6 @@ export default function PsicologosScreen() {
           user?.role === 'paciente' && user?.id ? { pacienteId: user.id } : undefined,
           token || undefined
         );
-        console.log('Psicólogos carregados:', data);
         setProfs(Array.isArray(data) ? data : []);
       } catch (e: any) {
         console.error('Erro ao carregar psicólogos:', e);
@@ -123,14 +122,40 @@ export default function PsicologosScreen() {
   );
 }
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isSmallScreen = SCREEN_WIDTH < 360;
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  title: { fontSize: 20, fontWeight: '700', color: Colors.text, margin: 8 },
-  card: { backgroundColor: Colors.card, padding: 12, borderRadius: 10, marginBottom: 10, borderWidth: 1, borderColor: Colors.border },
+  title: { 
+    fontSize: isSmallScreen ? 18 : 20, 
+    fontWeight: '700', 
+    color: Colors.text, 
+    margin: isSmallScreen ? 6 : 8 
+  },
+  card: { 
+    backgroundColor: Colors.card, 
+    padding: isSmallScreen ? 10 : 12, 
+    borderRadius: 10, 
+    marginBottom: 10, 
+    borderWidth: 1, 
+    borderColor: Colors.border 
+  },
   cardVinculado: { borderColor: Colors.tint, borderWidth: 2 },
-  name: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  meta: { color: Colors.textSecondary, marginTop: 4 },
-  btn: { padding: 10, borderRadius: 8 },
+  name: { 
+    fontSize: isSmallScreen ? 14 : 16, 
+    fontWeight: '700', 
+    color: Colors.text 
+  },
+  meta: { 
+    color: Colors.textSecondary, 
+    marginTop: 4,
+    fontSize: isSmallScreen ? 12 : 14
+  },
+  btn: { 
+    padding: isSmallScreen ? 8 : 10, 
+    borderRadius: 8 
+  },
 });
 
 

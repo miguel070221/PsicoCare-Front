@@ -89,7 +89,29 @@ export default function MeusAgendamentos() {
   }
 
   const agendamentosDoMes = agendamentos.filter(a => {
-    const data = new Date(a.data);
+    if (!a.data) return false;
+    
+    // Converter data DD-MM-YYYY para Date
+    let data: Date | null = null;
+    try {
+      // Tentar parsear formato DD-MM-YYYY
+      if (a.data.match(/^\d{2}-\d{2}-\d{4}$/)) {
+        const [dd, mm, yyyy] = a.data.split('-');
+        data = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+      } else if (a.data_hora) {
+        // Se tem data_hora, usar ela
+        data = new Date(a.data_hora);
+      } else {
+        // Tentar parsear como ISO ou outro formato
+        data = new Date(a.data);
+      }
+    } catch (e) {
+      console.error('Erro ao parsear data:', a.data, e);
+      return false;
+    }
+    
+    if (!data || isNaN(data.getTime())) return false;
+    
     return data.getMonth() === month && data.getFullYear() === year && (!search || a.status?.toLowerCase().includes(search.toLowerCase()));
   });
 
@@ -98,20 +120,46 @@ export default function MeusAgendamentos() {
       <AppHeader title="Agenda" subtitle="Gerencie seus agendamentos" />
       <View style={styles.calendarRow}>
         <View style={styles.calendarBox}>
-          <Text style={styles.monthTitle}>Outubro {year}</Text>
+          <Text style={styles.monthTitle}>
+            {new Date(year, month).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+          </Text>
           <View style={styles.daysRow}>
             {['DOM','SEG','TER','QUA','QUI','SEX','SÁB'].map(d => <Text key={d} style={styles.dayName}>{d}</Text>)}
           </View>
           <View style={styles.daysGrid}>
-            {days.map((date, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={[styles.dayCell, agendamentosDoMes.some(a => new Date(a.data).getDate() === date.getDate()) && styles.dayCellMarked, hoje.getDate() === date.getDate() && styles.dayCellToday]}
-                onPress={() => openModal(date)}
-              >
-                <Text style={styles.dayNum}>{date.getDate()}</Text>
-              </TouchableOpacity>
-            ))}
+            {days.map((date, idx) => {
+              // Verificar se há agendamentos neste dia
+              const temAgendamento = agendamentosDoMes.some(a => {
+                if (!a.data) return false;
+                try {
+                  let dataAgendamento: Date | null = null;
+                  if (a.data.match(/^\d{2}-\d{2}-\d{4}$/)) {
+                    const [dd, mm, yyyy] = a.data.split('-');
+                    dataAgendamento = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+                  } else if (a.data_hora) {
+                    dataAgendamento = new Date(a.data_hora);
+                  } else {
+                    dataAgendamento = new Date(a.data);
+                  }
+                  if (!dataAgendamento || isNaN(dataAgendamento.getTime())) return false;
+                  return dataAgendamento.getDate() === date.getDate() && 
+                         dataAgendamento.getMonth() === date.getMonth() && 
+                         dataAgendamento.getFullYear() === date.getFullYear();
+                } catch {
+                  return false;
+                }
+              });
+              
+              return (
+                <TouchableOpacity
+                  key={idx}
+                  style={[styles.dayCell, temAgendamento && styles.dayCellMarked, hoje.getDate() === date.getDate() && styles.dayCellToday]}
+                  onPress={() => openModal(date)}
+                >
+                  <Text style={styles.dayNum}>{date.getDate()}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
         <View style={styles.eventsBox}>

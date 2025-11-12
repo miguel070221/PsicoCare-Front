@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import Colors from '../constants/Colors';
 import { cadastrarUsuario } from '../lib/api';
 import { formatarData } from '../lib/formatters';
+import Logo from '../components/Logo';
 
 type UserType = 'paciente' | 'psicologo';
 
@@ -73,6 +74,11 @@ export default function RegisterScreen() {
 
   return (
     <ScrollView style={styles.container}>
+      {/* Logo PsicoCare */}
+      <View style={styles.logoContainer}>
+        <Logo size="medium" showText={true} />
+      </View>
+      
       <Text style={styles.title}>Criar Conta</Text>
 
       {/* Seletor de Tipo de Utilizador */}
@@ -131,13 +137,17 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     padding: 20,
   },
+  logoContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+  },
   title: {
     fontSize: 26,
     fontWeight: '600',
     color: Colors.text,
     textAlign: 'center',
     marginBottom: 24,
-    marginTop: 28,
   },
   userTypeSelector: {
     flexDirection: 'row',

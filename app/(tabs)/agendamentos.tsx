@@ -1,15 +1,17 @@
 // Localização: (app)/agendamentos.tsx
 
 import { useRouter } from 'expo-router';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert, Modal, Dimensions, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '../../constants/Colors';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { getAgendamentosUsuario, listarPsicologosPublicos, criarAgendamento, getSlotsDisponiveis, listarAtendimentosDoPaciente, listarPsicologosVinculadosPorAtendimentos, getDiasSemanaDisponiveis, listarHorariosDisponiveisPublico, getAgendamentosPsicologo, cancelarAgendamento, listarAtendimentosDoPsicologo, getPsicologoMe } from '../../lib/api';
+import { getAgendamentosUsuario, listarPsicologosPublicos, criarAgendamento, listarAtendimentosDoPaciente, listarPsicologosVinculadosPorAtendimentos, getAgendamentosPsicologo, cancelarAgendamento, listarAtendimentosDoPsicologo, getPsicologoMe, atualizarAgendamento } from '../../lib/api';
 import { useLocalSearchParams } from 'expo-router';
 import AppHeader from '../../components/AppHeader';
 import EmptyState from '../../components/EmptyState';
 import { formatarHora, formatarData } from '../../lib/formatters';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function Agendamentos() {
   const router = useRouter();
@@ -27,25 +29,53 @@ export default function Agendamentos() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState<number>(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState<number>(new Date().getFullYear());
-  const [slotsDisponiveis, setSlotsDisponiveis] = useState<string[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
-  const [diasComHorarios, setDiasComHorarios] = useState<Set<string>>(new Set());
-  const [horariosConfigurados, setHorariosConfigurados] = useState<any[]>([]);
+  // Gerar todos os horários de 00:00 até 23:59 (de hora em hora e meia em meia hora)
+  const [horariosDisponiveis] = useState<string[]>(() => {
+    const horarios: string[] = [];
+    for (let hora = 0; hora < 24; hora++) {
+      for (let minuto = 0; minuto < 60; minuto += 30) {
+        const horaStr = String(hora).padStart(2, '0');
+        const minutoStr = String(minuto).padStart(2, '0');
+        horarios.push(`${horaStr}:${minutoStr}`);
+      }
+    }
+    return horarios; // 00:00, 00:30, 01:00, 01:30, ..., 23:00, 23:30
+  });
+  const [editingAgendamento, setEditingAgendamento] = useState<number | null>(null);
   const [pacientes, setPacientes] = useState<any[]>([]); // Para psicólogos
   const [pacienteSelecionado, setPacienteSelecionado] = useState<number | null>(null); // Para psicólogos
   const [psicologoId, setPsicologoId] = useState<number | null>(null); // ID do psicólogo logado
+  const [modalConfirmarExclusao, setModalConfirmarExclusao] = useState(false);
+  const [agendamentoParaExcluir, setAgendamentoParaExcluir] = useState<number | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
 
   const isPaciente = user?.role === 'paciente';
   const isPsicologo = user?.role === 'psicologo';
   
-  // Debug: verificar se o componente está renderizando corretamente
-  useEffect(() => {
-    console.log('🔵 COMPONENTE RENDERIZADO');
-    console.log('🔵 user:', user);
-    console.log('🔵 isPaciente:', isPaciente);
-    console.log('🔵 profissionais.length:', profissionais.length);
-    console.log('🔵 profissionais:', profissionais);
-  }, [user, isPaciente, profissionais]);
+  // Dimensões para responsividade
+  const { width: screenWidth } = useMemo(() => Dimensions.get('window'), []);
+  const isSmallScreen = screenWidth < 360;
+  
+  // Memoizar funções para evitar re-renders
+  // Memoizar agendamentos filtrados
+  const agendamentosFuturos = useMemo(() => {
+    return agendamentos.filter((ag: any) => {
+      const dataHora = ag.data_hora || (ag.data && ag.horario ? `${ag.data} ${ag.horario}` : null);
+      if (!dataHora) return false;
+      try {
+        const dataAgendamento = new Date(dataHora);
+        return dataAgendamento >= new Date();
+      } catch {
+        return false;
+      }
+    }).sort((a: any, b: any) => {
+      const getTime = (ag: any) => {
+        const dh = ag.data_hora || (ag.data && ag.horario ? `${ag.data} ${ag.horario}` : null);
+        return dh ? new Date(dh).getTime() : 0;
+      };
+      return getTime(a) - getTime(b);
+    });
+  }, [agendamentos]);
 
   // Função auxiliar para formatar Date para DD-MM-AAAA
   const formatarDataParaInput = (data: Date): string => {
@@ -55,14 +85,128 @@ export default function Agendamentos() {
     return `${dd}-${mm}-${yyyy}`;
   };
 
+  // Carregar psicólogos vinculados automaticamente (para pacientes)
+  useEffect(() => {
+    const carregarPsicologos = async () => {
+      if (!isPaciente || !token) {
+        return;
+      }
+      
+      console.log('🔄 [AUTO] Carregando psicólogos vinculados...');
+      try {
+        const profsVinculados = await listarPsicologosVinculadosPorAtendimentos(token);
+        console.log('✅ [AUTO] Psicólogos carregados:', Array.isArray(profsVinculados) ? profsVinculados.length : 0);
+        setProfissionais(Array.isArray(profsVinculados) ? profsVinculados : []);
+        
+        // Selecionar profissional se vier na URL
+        const pid = searchParams.profissionalId;
+        if (pid) {
+          setSelectedProfissional(Number(pid));
+        }
+      } catch (e: any) {
+        console.error('❌ [AUTO] Erro ao buscar psicólogos vinculados:', e);
+        setProfissionais([]);
+      }
+    };
+    
+    carregarPsicologos();
+  }, [isPaciente, token, searchParams.profissionalId]);
+
+  // Carregar pacientes vinculados automaticamente (para psicólogos)
+  useEffect(() => {
+    const carregarPacientes = async () => {
+      if (!isPsicologo || !token) {
+        return;
+      }
+      
+      console.log('🔄 [AUTO] Carregando pacientes vinculados...');
+      try {
+        const [psicologo, atendimentos] = await Promise.all([
+          getPsicologoMe(token).catch(() => null),
+          listarAtendimentosDoPsicologo(token).catch(() => [])
+        ]);
+        
+        if (psicologo?.id) {
+          setPsicologoId(psicologo.id);
+          console.log('✅ [AUTO] ID do psicólogo:', psicologo.id);
+        }
+        
+        console.log('🔍 [AUTO] Todos os atendimentos recebidos:', JSON.stringify(atendimentos, null, 2));
+        console.log('🔍 [AUTO] Total de atendimentos:', Array.isArray(atendimentos) ? atendimentos.length : 0);
+        
+        // Log detalhado de TODOS os atendimentos recebidos
+        console.log('🔍 [AUTO] ====== ANÁLISE DE ATENDIMENTOS ======');
+        console.log('🔍 [AUTO] Total de atendimentos recebidos:', Array.isArray(atendimentos) ? atendimentos.length : 0);
+        
+        if (Array.isArray(atendimentos) && atendimentos.length > 0) {
+          atendimentos.forEach((a: any, idx: number) => {
+            const statusOk = a.status === 'ativo' || !a.status;
+            const statusDisplay = a.status || 'NULL (ativo)';
+            console.log(`  ${idx + 1}. Atendimento ID ${a.id}:`);
+            console.log(`     - Paciente ID: ${a.id_paciente}, Nome: ${a.paciente_nome || 'SEM NOME'}`);
+            console.log(`     - Status: ${statusDisplay} ${statusOk ? '✅' : '❌'}`);
+            console.log(`     - Será incluído: ${statusOk ? 'SIM' : 'NÃO'}`);
+          });
+        } else {
+          console.log('⚠️ [AUTO] Nenhum atendimento recebido ou array vazio');
+        }
+        
+        const atendimentosFiltrados = (Array.isArray(atendimentos) ? atendimentos : [])
+          .filter((a: any) => {
+            const statusOk = a.status === 'ativo' || !a.status;
+            if (!statusOk) {
+              console.warn(`⚠️ [AUTO] Atendimento ID ${a.id} EXCLUÍDO: paciente ${a.id_paciente} (${a.paciente_nome}) tem status "${a.status}" (não é ativo)`);
+            }
+            return statusOk;
+          });
+        console.log('🔍 [AUTO] Atendimentos filtrados (ativos):', atendimentosFiltrados.length);
+        console.log('🔍 [AUTO] Atendimentos excluídos (inativos):', (Array.isArray(atendimentos) ? atendimentos.length : 0) - atendimentosFiltrados.length);
+        
+        if (atendimentosFiltrados.length === 0 && Array.isArray(atendimentos) && atendimentos.length > 0) {
+          console.error('❌ [AUTO] PROBLEMA DETECTADO: Existem atendimentos, mas NENHUM está ativo!');
+          console.error('❌ [AUTO] Todos os atendimentos têm status diferente de "ativo" ou NULL');
+          atendimentos.forEach((a: any) => {
+            console.error(`   - Atendimento ID ${a.id}: paciente ${a.id_paciente} (${a.paciente_nome}), status: "${a.status}"`);
+          });
+        }
+        
+        const pacientesUnicos = Array.from(
+          new Map(
+            atendimentosFiltrados
+              .map((a: any) => {
+                const paciente = { id: a.id_paciente, nome: a.paciente_nome || `Paciente #${a.id_paciente}` };
+                console.log(`🔍 [AUTO] Mapeando paciente:`, paciente);
+                return [a.id_paciente, paciente];
+              })
+          ).values()
+        );
+        console.log('✅ [AUTO] Pacientes únicos carregados:', pacientesUnicos.length);
+        if (pacientesUnicos.length > 0) {
+          pacientesUnicos.forEach((p, idx) => {
+            console.log(`  ${idx + 1}. ID: ${p.id}, Nome: ${p.nome}`);
+          });
+        } else {
+          console.warn('⚠️ [AUTO] NENHUM PACIENTE DISPONÍVEL PARA AGENDAMENTO!');
+          console.warn('⚠️ [AUTO] Possíveis causas:');
+          console.warn('   1. Não há atendimentos criados para este psicólogo');
+          console.warn('   2. Todos os atendimentos estão com status inativo');
+          console.warn('   3. Erro ao buscar atendimentos do backend');
+        }
+        console.log('🔍 [AUTO] ========================================');
+        setPacientes(pacientesUnicos);
+      } catch (e) {
+        console.error('❌ [AUTO] Erro ao buscar dados do psicólogo:', e);
+        setPacientes([]);
+      }
+    };
+    
+    carregarPacientes();
+  }, [isPsicologo, token]);
+
+  // Carregar agendamentos automaticamente
   useEffect(() => {
     const fetchAgendamentos = async () => {
-      console.log('=== fetchAgendamentos INICIADO ===');
-      console.log('user:', user);
-      console.log('token:', token ? 'presente' : 'ausente');
-      
       if (!user || !token) {
-        console.log('RETORNO: user ou token ausente');
         return;
       }
       
@@ -71,152 +215,44 @@ export default function Agendamentos() {
       try {
         // Buscar agendamentos conforme o role
         if (isPaciente) {
+          console.log('📥 [AUTO] Carregando agendamentos para paciente ID:', user.id);
+          console.log('📥 [AUTO] Token presente:', !!token);
+          console.log('📥 [AUTO] User object:', JSON.stringify(user, null, 2));
           const data = await getAgendamentosUsuario(user.id, token);
-          setAgendamentos(data);
-          console.log('Agendamentos do paciente carregados:', data?.length || 0);
+          console.log('📥 [AUTO] Resposta bruta da API:', data);
+          console.log('📥 [AUTO] Agendamentos recebidos:', Array.isArray(data) ? data.length : 0, 'agendamentos');
+          if (Array.isArray(data) && data.length > 0) {
+            console.log('📥 [AUTO] Primeiro agendamento:', JSON.stringify(data[0], null, 2));
+            console.log('📥 [AUTO] Todos os agendamentos:', JSON.stringify(data, null, 2));
+          } else {
+            console.log('⚠️ [AUTO] Nenhum agendamento encontrado para o paciente');
+            console.log('⚠️ [AUTO] Tipo da resposta:', typeof data);
+            console.log('⚠️ [AUTO] É array?', Array.isArray(data));
+          }
+          setAgendamentos(Array.isArray(data) ? data : []);
         } else if (isPsicologo) {
+          console.log('📥 [AUTO] Carregando agendamentos para psicólogo...');
+          console.log('📥 [AUTO] Token presente:', !!token);
+          console.log('📥 [AUTO] User object:', JSON.stringify(user, null, 2));
           const data = await getAgendamentosPsicologo(token);
-          setAgendamentos(data);
-          console.log('Agendamentos do psicólogo carregados:', data?.length || 0);
-          
-          // Buscar ID do psicólogo
-          try {
-            const psicologo = await getPsicologoMe(token);
-            if (psicologo?.id) {
-              setPsicologoId(psicologo.id);
-            }
-          } catch (e) {
-            console.error('Erro ao buscar ID do psicólogo:', e);
+          console.log('📥 [AUTO] Resposta bruta da API:', data);
+          console.log('📥 [AUTO] Agendamentos recebidos:', Array.isArray(data) ? data.length : 0, 'agendamentos');
+          if (Array.isArray(data) && data.length > 0) {
+            console.log('📥 [AUTO] Primeiro agendamento:', JSON.stringify(data[0], null, 2));
+            console.log('📥 [AUTO] Todos os agendamentos:', JSON.stringify(data, null, 2));
+          } else {
+            console.log('⚠️ [AUTO] Nenhum agendamento encontrado para o psicólogo');
+            console.log('⚠️ [AUTO] Tipo da resposta:', typeof data);
+            console.log('⚠️ [AUTO] É array?', Array.isArray(data));
           }
-          
-          // Buscar pacientes vinculados
-          try {
-            const atendimentos = await listarAtendimentosDoPsicologo(token);
-            const pacientesUnicos = Array.from(
-              new Map(
-                atendimentos
-                  .filter((a: any) => a.status === 'ativo' || !a.status)
-                  .map((a: any) => [a.id_paciente, { id: a.id_paciente, nome: a.paciente_nome || `Paciente #${a.id_paciente}` }])
-              ).values()
-            );
-            setPacientes(pacientesUnicos);
-            console.log('Pacientes vinculados:', pacientesUnicos.length);
-          } catch (e) {
-            console.error('Erro ao buscar pacientes:', e);
-            setPacientes([]);
-          }
+          setAgendamentos(Array.isArray(data) ? data : []);
         }
-        
-        // buscar lista de profissionais vinculados ao paciente (apenas se for paciente)
-        if (isPaciente) {
-          console.log('=== BUSCANDO PSICÓLOGOS VINCULADOS ===');
-          console.log('Paciente ID:', user.id);
-          console.log('User completo:', JSON.stringify(user, null, 2));
-          console.log('Token presente:', !!token);
-          console.log('isPaciente:', isPaciente);
-          
-          let profsEncontrados: any[] = [];
-          
-          // Método 1: buscar psicólogos vinculados diretamente pelos atendimentos
-          try {
-            console.log('🔍 Método 1: Buscando psicólogos vinculados por atendimentos...');
-            const profsVinculados = await listarPsicologosVinculadosPorAtendimentos(token);
-            console.log('📊 Resultado método 1:', profsVinculados);
-            console.log('📊 Tipo:', typeof profsVinculados);
-            console.log('📊 É array?', Array.isArray(profsVinculados));
-            console.log('📊 Quantidade:', Array.isArray(profsVinculados) ? profsVinculados.length : 'N/A');
-            
-            if (Array.isArray(profsVinculados) && profsVinculados.length > 0) {
-              console.log('✅ Método 1: Psicólogos encontrados! Quantidade:', profsVinculados.length);
-              profsEncontrados = profsVinculados;
-            } else {
-              console.warn('⚠️ Método 1: Nenhum psicólogo retornado ou array vazio');
-            }
-          } catch (eDireto: any) {
-            console.error('❌ Erro no método 1:', eDireto);
-            console.error('Mensagem:', eDireto?.message);
-            console.error('Status:', eDireto?.response?.status);
-            console.error('Dados:', eDireto?.response?.data);
-          }
-          
-          // Método 2: buscar através de atendimentos e filtrar
-          if (profsEncontrados.length === 0) {
-            try {
-              console.log('🔍 Método 2: Buscando através de atendimentos...');
-              const atendimentos = await listarAtendimentosDoPaciente(token);
-              console.log('📊 Atendimentos encontrados:', atendimentos?.length || 0);
-              
-              const atendimentosAtivos = Array.isArray(atendimentos) 
-                ? atendimentos.filter((a: any) => a.status === 'ativo' || !a.status || a.status === null)
-                : [];
-              
-              console.log('📊 Atendimentos ativos:', atendimentosAtivos.length);
-              
-              if (atendimentosAtivos.length > 0) {
-                const idsPsicologos = atendimentosAtivos
-                  .map((a: any) => Number(a.id_psicologo || a.id_psicologo))
-                  .filter((id: any) => !isNaN(id) && id > 0);
-                
-                console.log('📊 IDs dos psicólogos:', idsPsicologos);
-                
-                if (idsPsicologos.length > 0) {
-                  const todosProfs = await listarPsicologosPublicos(
-                    { pacienteId: user.id },
-                    token
-                  );
-                  
-                  console.log('📊 Todos os profissionais retornados:', todosProfs?.length || 0);
-                  
-                  const profsVinculados = Array.isArray(todosProfs)
-                    ? todosProfs.filter((p: any) => idsPsicologos.includes(Number(p.id)))
-                    : [];
-                  
-                  console.log('✅ Método 2: Psicólogos vinculados encontrados:', profsVinculados.length);
-                  profsEncontrados = profsVinculados;
-                }
-              }
-            } catch (eAtendimentos: any) {
-              console.error('❌ Erro no método 2:', eAtendimentos);
-            }
-          }
-          
-          // Método 3: último fallback - buscar com apenasVinculados
-          if (profsEncontrados.length === 0) {
-            try {
-              console.log('🔍 Método 3: Buscando com apenasVinculados=true...');
-              const profs = await listarPsicologosPublicos(
-                { pacienteId: user.id, apenasVinculados: true },
-                token
-              );
-              
-              console.log('📊 Resultado método 3:', profs?.length || 0);
-              
-              const profsVinculados = Array.isArray(profs) 
-                ? profs.filter((p: any) => p.vinculado === true || p.vinculado === 1 || String(p.vinculado) === '1')
-                : [];
-              
-              console.log('✅ Método 3: Psicólogos vinculados encontrados:', profsVinculados.length);
-              profsEncontrados = profsVinculados;
-            } catch (eFinal: any) {
-              console.error('❌ Erro no método 3:', eFinal);
-            }
-          }
-          
-          console.log('🎯 RESULTADO FINAL: Profissionais encontrados:', profsEncontrados.length);
-          if (profsEncontrados.length > 0) {
-            console.log('🎯 IDs:', profsEncontrados.map(p => ({ id: p.id, nome: p.nome })));
-          }
-          
-          setProfissionais(profsEncontrados);
-          
-          // Selecionar profissional se vier na URL
-          const pid = searchParams.profissionalId;
-          if (pid) {
-            setSelectedProfissional(Number(pid));
-          }
-        }
-      } catch (eAgendamentos) {
-        console.warn('Erro ao carregar agendamentos (continuando):', eAgendamentos);
+      } catch (eAgendamentos: any) {
+        console.error('❌ [AUTO] Erro ao carregar agendamentos:', eAgendamentos);
+        console.error('❌ [AUTO] Mensagem do erro:', eAgendamentos?.message);
+        console.error('❌ [AUTO] Response do erro:', eAgendamentos?.response?.data);
+        console.error('❌ [AUTO] Status do erro:', eAgendamentos?.response?.status);
+        console.error('❌ [AUTO] Stack trace:', eAgendamentos?.stack);
         setAgendamentos([]);
       } finally {
         setLoading(false);
@@ -225,128 +261,43 @@ export default function Agendamentos() {
     fetchAgendamentos();
   }, [user, token, isPaciente, isPsicologo]);
 
-  // Carregar horários configurados do psicólogo quando selecionado
-  useEffect(() => {
-    const carregarHorariosConfigurados = async () => {
-      const profissionalId = isPsicologo ? psicologoId : selectedProfissional;
-      if (!profissionalId) {
-        setHorariosConfigurados([]);
-        return;
-      }
-
-      try {
-        const horarios = await listarHorariosDisponiveisPublico(profissionalId);
-        console.log('Horários configurados:', horarios);
-        setHorariosConfigurados(horarios || []);
-      } catch (e) {
-        console.error('Erro ao carregar horários configurados:', e);
-        setHorariosConfigurados([]);
-      }
-    };
-
-    carregarHorariosConfigurados();
-  }, [selectedProfissional, psicologoId, isPsicologo]);
-
-  // Precarregar dias com horários disponíveis quando um psicólogo é selecionado
-  useEffect(() => {
-    const carregarDiasComHorarios = async () => {
-      const profissionalId = isPsicologo ? psicologoId : selectedProfissional;
-      if (!profissionalId) {
-        setDiasComHorarios(new Set());
-        return;
-      }
-
-      try {
-        // Primeiro, buscar quais dias da semana o psicólogo tem horários configurados
-        const { diasSemana } = await getDiasSemanaDisponiveis(profissionalId);
-        console.log('Dias da semana disponíveis:', diasSemana);
-        
-        if (!diasSemana || diasSemana.length === 0) {
-          setDiasComHorarios(new Set());
-          return;
+  // Função para recarregar agendamentos manualmente
+  const recarregarAgendamentos = useCallback(async () => {
+    if (!user || !token) {
+      console.log('⚠️ [RECARREGAR] Usuário ou token não disponível');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      console.log('🔄 [RECARREGAR] Iniciando recarregamento de agendamentos...');
+      
+      if (isPaciente) {
+        console.log('🔄 [RECARREGAR] Buscando agendamentos para paciente ID:', user.id);
+        const data = await getAgendamentosUsuario(user.id, token);
+        console.log('✅ [RECARREGAR] Agendamentos recebidos:', Array.isArray(data) ? data.length : 0);
+        if (Array.isArray(data) && data.length > 0) {
+          console.log('📋 [RECARREGAR] Primeiro agendamento:', JSON.stringify(data[0], null, 2));
         }
-
-        // Calcular as próximas ocorrências desses dias da semana
-        const dias: Set<string> = new Set();
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-        
-        // Buscar próximas 8 semanas (56 dias) para garantir que tenha dias suficientes
-        for (let i = 0; i < 56; i++) {
-          const dia = new Date(hoje);
-          dia.setDate(hoje.getDate() + i);
-          const diaSemana = dia.getDay(); // 0 = Domingo, 1 = Segunda, etc.
-          
-          // Se este dia da semana está na lista de disponíveis
-          if (diasSemana.includes(diaSemana)) {
-            const dataISO = dia.toISOString().split('T')[0];
-            
-            // Verificar se ainda tem slots disponíveis (considerando agendamentos já feitos)
-            try {
-              const response = await getSlotsDisponiveis(profissionalId, dataISO);
-              if (response.slots && response.slots.length > 0) {
-                const dataFormatada = formatarData(dia);
-                dias.add(dataFormatada);
-                // Limitar a 14 dias para não sobrecarregar a UI
-                if (dias.size >= 14) break;
-              }
-            } catch (e) {
-              // Ignora erros para dias individuais
-            }
-          }
+        setAgendamentos(Array.isArray(data) ? data : []);
+      } else if (isPsicologo) {
+        console.log('🔄 [RECARREGAR] Buscando agendamentos para psicólogo...');
+        const data = await getAgendamentosPsicologo(token);
+        console.log('✅ [RECARREGAR] Agendamentos recebidos:', Array.isArray(data) ? data.length : 0);
+        if (Array.isArray(data) && data.length > 0) {
+          console.log('📋 [RECARREGAR] Primeiro agendamento:', JSON.stringify(data[0], null, 2));
         }
-        
-        console.log('Dias disponíveis calculados:', Array.from(dias));
-        setDiasComHorarios(dias);
-      } catch (e) {
-        console.error('Erro ao carregar dias com horários:', e);
-        setDiasComHorarios(new Set());
+        setAgendamentos(Array.isArray(data) ? data : []);
       }
-    };
-
-    carregarDiasComHorarios();
-  }, [selectedProfissional, psicologoId, isPsicologo]);
-
-  // Carregar slots disponíveis quando profissional e data forem selecionados
-  useEffect(() => {
-    const carregarSlots = async () => {
-      const profissionalId = isPsicologo ? psicologoId : selectedProfissional;
-      if (!profissionalId || !dataInput) {
-        setSlotsDisponiveis([]);
-        return;
-      }
-
-      setLoadingSlots(true);
-      try {
-        // Converter DD-MM-AAAA para formato ISO
-        const [dd, mm, yyyy] = dataInput.split('-');
-        const dataISO = `${yyyy}-${mm}-${dd}`;
-        
-        const response = await getSlotsDisponiveis(profissionalId, dataISO);
-        setSlotsDisponiveis(response.slots || []);
-      } catch (e: any) {
-        console.error('Erro ao carregar slots:', e);
-        setSlotsDisponiveis([]);
-        Alert.alert('Aviso', 'Não foi possível carregar os horários disponíveis. Verifique se o psicólogo configurou horários.');
-      } finally {
-        setLoadingSlots(false);
-      }
-    };
-
-    carregarSlots();
-  }, [selectedProfissional, dataInput, psicologoId, isPsicologo]);
-
-  // Debug: Log quando os estados mudarem
-  useEffect(() => {
-    console.log('=== ESTADOS ATUALIZADOS ===');
-    console.log('selectedProfissional:', selectedProfissional);
-    console.log('dataInput:', dataInput);
-    console.log('horaInput:', horaInput);
-    console.log('diasComHorarios:', Array.from(diasComHorarios));
-    console.log('slotsDisponiveis:', slotsDisponiveis);
-    console.log('profissionais.length:', profissionais.length);
-    console.log('profissionais:', profissionais.map(p => ({ id: p.id, nome: p.nome, disponivel: p.disponivel })));
-  }, [selectedProfissional, dataInput, horaInput, diasComHorarios, slotsDisponiveis, profissionais]);
+    } catch (e: any) {
+      console.error('❌ [RECARREGAR] Erro ao recarregar agendamentos:', e);
+      console.error('❌ [RECARREGAR] Mensagem:', e?.message);
+      console.error('❌ [RECARREGAR] Response:', e?.response?.data);
+      setAgendamentos([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, token, isPaciente, isPsicologo]);
 
   const getMonthDays = (year: number, month: number) => {
     const first = new Date(year, month, 1);
@@ -377,7 +328,9 @@ export default function Agendamentos() {
     return dataAgendamento >= hoje;
   };
 
-  const handleCriarAgendamento = async () => {
+  const handleCriarAgendamento = useCallback(async () => {
+    console.log('📤 Criando novo agendamento...');
+    
     // Validação de campos obrigatórios
     const camposFaltando: string[] = [];
     
@@ -419,13 +372,6 @@ export default function Agendamentos() {
       return;
     }
 
-    // Verificar se o horário está disponível
-    const profissionalId = isPsicologo ? psicologoId : selectedProfissional;
-    if (slotsDisponiveis.length > 0 && !slotsDisponiveis.includes(horaInput)) {
-      Alert.alert('Erro', 'Este horário não está disponível. Por favor, escolha um dos horários disponíveis.');
-      return;
-    }
-
     if (!token || !user) {
       Alert.alert('Erro', 'Você precisa estar autenticado.');
       return;
@@ -435,98 +381,337 @@ export default function Agendamentos() {
       setCreating(true);
       // Converter DD-MM-AAAA para ISO
       const [dd, mm, yyyy] = dataInput.split('-');
-      const iso = new Date(`${yyyy}-${mm}-${dd}T${horaInput}:00`).toISOString();
+      const [hora, minuto] = horaInput.split(':');
+      // Criar data diretamente em UTC para evitar problemas de timezone
+      // Usar Date.UTC para criar a data como se fosse UTC, preservando o horário informado
+      const dataUTC = new Date(Date.UTC(
+        Number(yyyy), 
+        Number(mm) - 1, 
+        Number(dd), 
+        Number(hora), 
+        Number(minuto)
+      ));
+      const iso = dataUTC.toISOString();
+      
+      console.log('📤 Dados do agendamento:', {
+        isPaciente,
+        isPsicologo,
+        selectedProfissional,
+        pacienteSelecionado,
+        dataInput,
+        horaInput,
+        iso
+      });
       
       // Criar agendamento conforme o role
+      let resultado;
       if (isPaciente) {
-        await criarAgendamento({ profissional_id: selectedProfissional, data_hora: iso }, token);
+        console.log('📤 [CRIAR] Criando agendamento para paciente:', { 
+          profissional_id: selectedProfissional, 
+          data_hora: iso,
+          user_id: user?.id,
+          role: user?.role
+        });
+        resultado = await criarAgendamento({ profissional_id: selectedProfissional, data_hora: iso }, token);
       } else if (isPsicologo) {
-        await criarAgendamento({ paciente_id: pacienteSelecionado, data_hora: iso }, token);
-      }
-      
-      Alert.alert('Sucesso', 'Agendamento criado com sucesso!');
-      
-      // Recarregar lista de agendamentos
-      if (isPaciente) {
-        const data = await getAgendamentosUsuario(user.id, token);
-        setAgendamentos(data);
-      } else if (isPsicologo) {
-        const data = await getAgendamentosPsicologo(token);
-        setAgendamentos(data);
-      }
-      
-      // Recarregar slots disponíveis para remover o horário ocupado
-      if (profissionalId && dataInput) {
-        const [dd, mm, yyyy] = dataInput.split('-');
-        const dataISO = `${yyyy}-${mm}-${dd}`;
-        try {
-          const response = await getSlotsDisponiveis(profissionalId, dataISO);
-          setSlotsDisponiveis(response.slots || []);
-          // Limpar horário selecionado para permitir nova seleção
-          setHoraInput('');
-        } catch (e) {
-          console.error('Erro ao recarregar slots:', e);
+        console.log('📤 [CRIAR] ====== CRIANDO AGENDAMENTO PARA PSICÓLOGO ======');
+        console.log('📤 [CRIAR] paciente_id:', pacienteSelecionado);
+        console.log('📤 [CRIAR] psicologo_id (token):', user?.id);
+        console.log('📤 [CRIAR] psicologoId (state):', psicologoId);
+        console.log('📤 [CRIAR] data_hora:', iso);
+        console.log('📤 [CRIAR] Pacientes disponíveis:', pacientes.map(p => ({ id: p.id, nome: p.nome })));
+        
+        // Verificar se o paciente selecionado está na lista de pacientes disponíveis
+        const pacienteEncontrado = pacientes.find(p => Number(p.id) === Number(pacienteSelecionado));
+        if (!pacienteEncontrado) {
+          console.error('❌ [CRIAR] Paciente selecionado NÃO está na lista de pacientes disponíveis!');
+          console.error('❌ [CRIAR] Paciente selecionado ID:', pacienteSelecionado);
+          console.error('❌ [CRIAR] Pacientes disponíveis IDs:', pacientes.map(p => p.id));
+          Alert.alert(
+            'Erro', 
+            `O paciente selecionado não está na lista de pacientes vinculados.\n\n` +
+            `Paciente ID: ${pacienteSelecionado}\n` +
+            `Pacientes disponíveis: ${pacientes.length > 0 ? pacientes.map(p => `${p.nome} (ID: ${p.id})`).join(', ') : 'Nenhum'}\n\n` +
+            `Por favor, recarregue a lista de pacientes.`
+          );
+          setCreating(false);
+          return;
         }
+        
+        console.log('✅ [CRIAR] Paciente encontrado na lista:', pacienteEncontrado);
+        console.log('📤 [CRIAR] Enviando requisição para criar agendamento...');
+        
+        resultado = await criarAgendamento({ 
+          paciente_id: pacienteSelecionado, 
+          profissional_id: psicologoId || user?.id,
+          data_hora: iso 
+        }, token);
+        
+        console.log('✅ [CRIAR] Resposta do backend:', resultado);
       }
       
-      // Limpar campos
+      console.log('✅ Agendamento criado com sucesso:', resultado);
+      
+      // Mostrar confirmação melhorada
+      const nomeDestinatario = isPaciente 
+        ? profissionais.find(p => p.id === selectedProfissional)?.nome || 'Profissional'
+        : pacientes.find(p => p.id === pacienteSelecionado)?.nome || 'Paciente';
+      
+      // Limpar campos primeiro
       if (isPaciente) {
         setDataInput('');
         setHoraInput('');
       } else if (isPsicologo) {
-        setPacienteSelecionado(null);
         setDataInput('');
         setHoraInput('');
       }
+      
+      // Guardar valores antes de limpar
+      const dataOriginal = dataInput;
+      const horaOriginal = horaInput;
+      
+      Alert.alert(
+        '✅ Agendamento Criado!', 
+        `Consulta agendada com sucesso!\n\n${isPaciente ? 'Profissional' : 'Paciente'}: ${nomeDestinatario}\nData: ${dataOriginal}\nHorário: ${horaOriginal}`,
+        [{ 
+          text: 'OK', 
+          style: 'default',
+          onPress: () => {
+            // Recarregar lista de agendamentos após criar
+            console.log('🔄 Recarregando agendamentos após criar...');
+            setTimeout(() => {
+              recarregarAgendamentos();
+            }, 100);
+          }
+        }]
+      );
     } catch (error: any) {
-      const mensagem = error?.message || error?.response?.data?.erro || 'Erro ao criar agendamento. Tente novamente.';
-      Alert.alert('Erro', mensagem);
+      console.error('❌ Erro ao criar agendamento:', error);
+      console.error('❌ Response:', error?.response?.data);
+      const mensagem = error?.response?.data?.erro || error?.message || 'Erro ao criar agendamento. Verifique se você está vinculado ao profissional e tente novamente.';
+      Alert.alert('Erro ao Agendar', mensagem);
     } finally {
       setCreating(false);
     }
-  };
+  }, [selectedProfissional, pacienteSelecionado, dataInput, horaInput, isPaciente, isPsicologo, token, user, profissionais, pacientes, recarregarAgendamentos]);
 
-  const handleCancelarAgendamento = async (agendamentoId: number) => {
-    Alert.alert(
-      'Cancelar Agendamento',
-      'Tem certeza que deseja cancelar este agendamento?',
-      [
-        { text: 'Não', style: 'cancel' },
-        {
-          text: 'Sim',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              if (!token) {
-                Alert.alert('Erro', 'Você precisa estar autenticado.');
-                return;
-              }
-              
-              await cancelarAgendamento(agendamentoId, token);
-              Alert.alert('Sucesso', 'Agendamento cancelado com sucesso!');
-              
-              // Recarregar lista de agendamentos
-              if (isPaciente) {
-                const data = await getAgendamentosUsuario(user.id, token);
-                setAgendamentos(data);
-              } else if (isPsicologo) {
-                const data = await getAgendamentosPsicologo(token);
-                setAgendamentos(data);
-              }
-            } catch (error: any) {
-              const mensagem = error?.message || error?.response?.data?.erro || 'Erro ao cancelar agendamento. Tente novamente.';
-              Alert.alert('Erro', mensagem);
-            }
+  const handleEditarAgendamento = (agendamento: any) => {
+    console.log('✏️ Editando agendamento:', agendamento);
+    
+    // Preencher formulário com dados do agendamento
+    setEditingAgendamento(agendamento.id);
+    if (isPaciente) {
+      setSelectedProfissional(agendamento.profissional_id || agendamento.id_profissional);
+    } else if (isPsicologo) {
+      setPacienteSelecionado(agendamento.usuario_id || agendamento.id_usuario);
+    }
+    
+    // Converter data e hora para o formato do input (DD-MM-YYYY)
+    try {
+      if (agendamento.data_hora) {
+        // Se tem data_hora (formato ISO ou datetime)
+        const dataObj = new Date(agendamento.data_hora);
+        if (!isNaN(dataObj.getTime())) {
+          const dd = String(dataObj.getDate()).padStart(2, '0');
+          const mm = String(dataObj.getMonth() + 1).padStart(2, '0');
+          const yyyy = dataObj.getFullYear();
+          setDataInput(`${dd}-${mm}-${yyyy}`);
+          const horaStr = dataObj.toTimeString().split(' ')[0].substring(0, 5);
+          setHoraInput(horaStr);
+          console.log('✅ Data/hora parseada de data_hora:', `${dd}-${mm}-${yyyy}`, horaStr);
+        }
+      } else if (agendamento.data && agendamento.horario) {
+        // Se tem data e horario separados
+        // A data pode estar em formato DD-MM-YYYY (vindo do backend) ou YYYY-MM-DD
+        let dataFormatada = '';
+        
+        if (agendamento.data.match(/^\d{2}-\d{2}-\d{4}$/)) {
+          // Já está no formato DD-MM-YYYY
+          dataFormatada = agendamento.data;
+        } else if (agendamento.data.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          // Formato YYYY-MM-DD
+          const [yyyy, mm, dd] = agendamento.data.split('-');
+          dataFormatada = `${dd}-${mm}-${yyyy}`;
+        } else {
+          // Tentar parsear como Date
+          const dataObj = new Date(agendamento.data);
+          if (!isNaN(dataObj.getTime())) {
+            const dd = String(dataObj.getDate()).padStart(2, '0');
+            const mm = String(dataObj.getMonth() + 1).padStart(2, '0');
+            const yyyy = dataObj.getFullYear();
+            dataFormatada = `${dd}-${mm}-${yyyy}`;
           }
         }
-      ]
-    );
+        
+        setDataInput(dataFormatada);
+        // Horário pode estar em formato HH:MM:SS ou HH:MM
+        const horaStr = agendamento.horario.substring(0, 5);
+        setHoraInput(horaStr);
+        console.log('✅ Data/hora parseada de data/horario:', dataFormatada, horaStr);
+      }
+    } catch (e) {
+      console.error('❌ Erro ao parsear data/hora do agendamento:', e);
+      Alert.alert('Erro', 'Não foi possível carregar os dados do agendamento para edição.');
+    }
   };
+
+  const handleSalvarAgendamento = useCallback(async () => {
+    if (editingAgendamento) {
+      // Atualizar agendamento existente
+      console.log('✏️ Salvando agendamento editado:', editingAgendamento);
+      
+      if (!dataInput || !horaInput) {
+        Alert.alert('Erro', 'Preencha data e hora.');
+        return;
+      }
+
+      if (!dataInput.match(/^\d{2}-\d{2}-\d{4}$/)) {
+        Alert.alert('Erro', 'Digite a data no formato DD-MM-AAAA.');
+        return;
+      }
+
+      if (!validarDataFutura(dataInput)) {
+        Alert.alert('Erro', 'A data deve ser hoje ou no futuro.');
+        return;
+      }
+
+      if (!validarHora(horaInput)) {
+        Alert.alert('Erro', 'Digite a hora no formato HH:MM (ex: 14:30).');
+        return;
+      }
+
+      if (!token) {
+        Alert.alert('Erro', 'Você precisa estar autenticado.');
+        return;
+      }
+
+      try {
+        setCreating(true);
+        const [dd, mm, yyyy] = dataInput.split('-');
+        const [hora, minuto] = horaInput.split(':');
+        // Criar data diretamente em UTC para evitar problemas de timezone
+        const dataUTC = new Date(Date.UTC(
+          Number(yyyy), 
+          Number(mm) - 1, 
+          Number(dd), 
+          Number(hora), 
+          Number(minuto)
+        ));
+        const dataHoraISO = dataUTC.toISOString();
+        console.log('📤 Atualizando agendamento:', { id: editingAgendamento, dataHoraISO });
+        
+        await atualizarAgendamento(editingAgendamento, { data_hora: dataHoraISO }, token);
+        
+        // Limpar formulário
+        setEditingAgendamento(null);
+        setDataInput('');
+        setHoraInput('');
+        
+        Alert.alert('✅ Sucesso', 'Agendamento atualizado com sucesso!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Recarregar lista após atualizar
+              setTimeout(() => {
+                recarregarAgendamentos();
+              }, 100);
+            }
+          }
+        ]);
+      } catch (error: any) {
+        console.error('❌ Erro ao atualizar agendamento:', error);
+        const mensagem = error?.response?.data?.erro || error?.message || 'Erro ao atualizar agendamento. Tente novamente.';
+        Alert.alert('Erro', mensagem);
+      } finally {
+        setCreating(false);
+      }
+    } else {
+      // Criar novo agendamento
+      handleCriarAgendamento();
+    }
+  }, [editingAgendamento, dataInput, horaInput, token, isPaciente, isPsicologo, handleCriarAgendamento, recarregarAgendamentos]);
+
+  // Função para abrir modal de confirmação de exclusão
+  const abrirModalExclusao = useCallback((agendamentoId: number) => {
+    console.log('🗑️ [MODAL] Abrindo modal de exclusão para agendamento ID:', agendamentoId);
+    setAgendamentoParaExcluir(agendamentoId);
+    setModalConfirmarExclusao(true);
+  }, []);
+
+  // Função para fechar modal de exclusão
+  const fecharModalExclusao = useCallback(() => {
+    console.log('🗑️ [MODAL] Fechando modal de exclusão');
+    setModalConfirmarExclusao(false);
+    setAgendamentoParaExcluir(null);
+  }, []);
+
+  // Função para confirmar exclusão
+  const confirmarExclusao = useCallback(async () => {
+    if (!agendamentoParaExcluir || !token) {
+      console.error('❌ [MODAL] Dados inválidos para exclusão');
+      Alert.alert('Erro', 'Dados inválidos para exclusão.');
+      fecharModalExclusao();
+      return;
+    }
+
+    const agendamentoId = Number(agendamentoParaExcluir);
+    if (isNaN(agendamentoId)) {
+      console.error('❌ [MODAL] ID inválido:', agendamentoParaExcluir);
+      Alert.alert('Erro', 'ID do agendamento inválido.');
+      fecharModalExclusao();
+      return;
+    }
+
+    try {
+      setExcluindo(true);
+      console.log('🗑️🗑️🗑️ [MODAL] ====== CONFIRMANDO EXCLUSÃO ====== 🗑️🗑️🗑️');
+      console.log('🗑️ [MODAL] Agendamento ID:', agendamentoId);
+      console.log('🗑️ [MODAL] Token presente:', !!token);
+      console.log('🗑️ [MODAL] Chamando cancelarAgendamento...');
+      
+      const inicio = Date.now();
+      const resultado = await cancelarAgendamento(agendamentoId, token);
+      const tempoDecorrido = Date.now() - inicio;
+      
+      console.log('✅ [MODAL] cancelarAgendamento retornou após', tempoDecorrido, 'ms');
+      console.log('✅ [MODAL] Resultado:', JSON.stringify(resultado, null, 2));
+      
+      // Fechar modal
+      fecharModalExclusao();
+      
+      // Aguardar um pouco antes de recarregar
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Recarregar lista
+      console.log('🔄 [MODAL] Recarregando lista...');
+      await recarregarAgendamentos();
+      console.log('✅ [MODAL] Lista recarregada');
+      
+      Alert.alert('Sucesso', 'Agendamento excluído com sucesso!');
+    } catch (error: any) {
+      console.error('❌❌❌ [MODAL] ====== ERRO AO EXCLUIR ====== ❌❌❌');
+      console.error('❌ [MODAL] Error tipo:', typeof error);
+      console.error('❌ [MODAL] Error name:', error?.name);
+      console.error('❌ [MODAL] Error message:', error?.message);
+      console.error('❌ [MODAL] Error stack:', error?.stack);
+      console.error('❌ [MODAL] Error response:', error?.response);
+      console.error('❌ [MODAL] Error response status:', error?.response?.status);
+      console.error('❌ [MODAL] Error response data:', error?.response?.data);
+      console.error('❌ [MODAL] Error completo:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+      
+      const mensagem = error?.response?.data?.erro || error?.response?.data?.message || error?.message || 'Erro ao excluir agendamento. Tente novamente.';
+      console.error('❌ [MODAL] Mensagem final:', mensagem);
+      Alert.alert('Erro ao Excluir', mensagem);
+    } finally {
+      setExcluindo(false);
+    }
+  }, [agendamentoParaExcluir, token, recarregarAgendamentos, fecharModalExclusao]);
 
 
   const profissionalSelecionado = profissionais.find((p) => Number(p.id) === Number(selectedProfissional));
 
   return (
+    <>
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.scrollContent}
@@ -535,85 +720,118 @@ export default function Agendamentos() {
     >
       <AppHeader title="Agendamentos" subtitle="Gerencie suas consultas" />
       
-      {/* Debug info - remover depois */}
-      {__DEV__ && (
-        <View style={{ padding: 8, backgroundColor: '#f0f0f0', marginBottom: 8, borderRadius: 4 }}>
-          <Text style={{ fontSize: 10 }}>DEBUG: Role: {user?.role || 'desconhecido'}</Text>
-          <Text style={{ fontSize: 10 }}>DEBUG: User ID: {user?.id || 'nenhum'}</Text>
-          <Text style={{ fontSize: 10 }}>DEBUG: isPaciente: {String(isPaciente)}</Text>
-          <Text style={{ fontSize: 10 }}>DEBUG: Token presente: {token ? 'sim' : 'não'}</Text>
-          <Text style={{ fontSize: 10 }}>DEBUG: Loading: {String(loading)}</Text>
-          <Text style={{ fontSize: 10 }}>DEBUG: Profissionais encontrados: {profissionais.length}</Text>
-          {profissionais.length > 0 && (
-            <>
-              <Text style={{ fontSize: 10 }}>DEBUG: IDs: {profissionais.map(p => p.id).join(', ')}</Text>
-              <Text style={{ fontSize: 10 }}>DEBUG: Nomes: {profissionais.map(p => p.nome || 'sem nome').join(', ')}</Text>
-            </>
-          )}
-          <Text style={{ fontSize: 10 }}>DEBUG: Profissional selecionado: {selectedProfissional || 'nenhum'}</Text>
-          <Text style={{ fontSize: 10 }}>DEBUG: Data selecionada: {dataInput || 'nenhuma'}</Text>
-          <Text style={{ fontSize: 10 }}>DEBUG: Hora selecionada: {horaInput || 'nenhuma'}</Text>
-        </View>
-      )}
       
       {/* Formulário de agendamento */}
       <View style={[styles.acompanhamentoCard, { marginTop: 8 }]}>
-        <Text style={styles.sectionTitle}>Novo Agendamento</Text>
+        <Text style={styles.sectionTitle}>
+          {editingAgendamento ? 'Editar Agendamento' : 'Novo Agendamento'}
+        </Text>
+        {editingAgendamento && (
+          <TouchableOpacity
+            style={{ alignSelf: 'flex-end', marginTop: -20, marginBottom: 8 }}
+            onPress={() => {
+              setEditingAgendamento(null);
+              setDataInput('');
+              setHoraInput('');
+            }}
+          >
+            <Text style={{ color: Colors.tint, fontSize: 14 }}>Cancelar edição</Text>
+          </TouchableOpacity>
+        )}
         
         {/* Seleção de paciente (apenas para psicólogos) */}
         {isPsicologo && (
           <>
-            <Text style={styles.label}>Selecione o Paciente</Text>
-            {pacientes.length === 0 ? (
-              loading ? (
-                <ActivityIndicator color={Colors.tint} size="small" style={{ marginVertical: 8 }} />
-              ) : (
-                <View style={{ marginBottom: 12 }}>
-                  <Text style={{ color: Colors.textSecondary, marginBottom: 8 }}>
-                    Nenhum paciente vinculado encontrado.
-                  </Text>
-                  <Text style={{ color: Colors.textSecondary, fontSize: 12 }}>
-                    Você precisa ter pacientes vinculados para criar agendamentos.
-                  </Text>
-                </View>
-              )
-            ) : (
-              <View style={styles.profissionaisContainer}>
-                {pacientes.map((p) => (
-                  <TouchableOpacity 
-                    key={p.id} 
-                    style={[
-                      styles.profissionalCard, 
-                      Number(pacienteSelecionado) === Number(p.id) && styles.profissionalCardSelected,
-                    ]} 
-                    onPress={() => {
-                      console.log('Paciente selecionado:', p.id);
-                      setPacienteSelecionado(p.id);
-                      setDataInput(''); // Limpar data ao mudar paciente
-                      setSlotsDisponiveis([]);
-                      setHoraInput('');
-                      setShowCalendar(false);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.profissionalCardContent} pointerEvents="none">
-                      <View style={styles.profissionalCardHeader}>
-                        <Text style={[
-                          styles.profissionalCardNome,
-                          Number(pacienteSelecionado) === Number(p.id) && styles.profissionalCardNomeSelected,
-                        ]}>
-                          {p.nome}
-                        </Text>
-                      </View>
-                      {Number(pacienteSelecionado) === Number(p.id) && (
-                        <Text style={styles.profissionalCardSelectedText}>
-                          ✓ Selecione uma data e horário abaixo
-                        </Text>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                ))}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={styles.label}>Selecione o Paciente</Text>
+              <TouchableOpacity 
+                onPress={async () => {
+                  console.log('🔄 [MANUAL] Recarregando pacientes...');
+                  try {
+                    const [psicologo, atendimentos] = await Promise.all([
+                      getPsicologoMe(token!).catch(() => null),
+                      listarAtendimentosDoPsicologo(token!).catch(() => [])
+                    ]);
+                    
+                    if (psicologo?.id) {
+                      setPsicologoId(psicologo.id);
+                    }
+                    
+                    const pacientesUnicos = Array.from(
+                      new Map(
+                        (Array.isArray(atendimentos) ? atendimentos : [])
+                          .filter((a: any) => a.status === 'ativo' || !a.status)
+                          .map((a: any) => [a.id_paciente, { id: a.id_paciente, nome: a.paciente_nome || `Paciente #${a.id_paciente}` }])
+                      ).values()
+                    );
+                    setPacientes(pacientesUnicos);
+                    console.log('✅ [MANUAL] Pacientes recarregados:', pacientesUnicos.length);
+                  } catch (e: any) {
+                    console.error('❌ [MANUAL] Erro ao recarregar pacientes:', e);
+                    Alert.alert('Erro', 'Não foi possível recarregar os pacientes.');
+                  }
+                }}
+                style={{ padding: 8, backgroundColor: Colors.cardAlt, borderRadius: 4, borderWidth: 1, borderColor: Colors.border }}
+              >
+                <Text style={{ color: Colors.text, fontSize: 12, fontWeight: 'bold' }}>🔄 Recarregar</Text>
+              </TouchableOpacity>
+            </View>
+            {loading ? (
+              <ActivityIndicator color={Colors.tint} size="small" style={{ marginVertical: 8 }} />
+            ) : pacientes.length === 0 ? (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ color: Colors.textSecondary, marginBottom: 8 }}>
+                  Nenhum paciente vinculado encontrado.
+                </Text>
+                <Text style={{ color: Colors.textSecondary, fontSize: 12 }}>
+                  Você precisa ter pacientes vinculados para criar agendamentos.
+                </Text>
               </View>
+            ) : (
+              <>
+                <Text style={[styles.hintText, { marginBottom: 8 }]}>
+                  {pacientes.length} paciente(s) vinculado(s) encontrado(s)
+                </Text>
+                <View style={styles.profissionaisContainer}>
+                  {pacientes.map((p) => (
+                    <TouchableOpacity 
+                      key={p.id} 
+                      style={[
+                        styles.profissionalCard, 
+                        Number(pacienteSelecionado) === Number(p.id) && styles.profissionalCardSelected,
+                      ]} 
+                      onPress={() => {
+                        console.log('Paciente selecionado:', p.id);
+                        setPacienteSelecionado(p.id);
+                        setDataInput(''); // Limpar data ao mudar paciente
+                        setHoraInput('');
+                        setShowCalendar(false);
+                        setEditingAgendamento(null);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.profissionalCardContent} pointerEvents="none">
+                        <View style={styles.profissionalCardHeader}>
+                          <Text style={[
+                            styles.profissionalCardNome,
+                            Number(pacienteSelecionado) === Number(p.id) && styles.profissionalCardNomeSelected,
+                          ]}>
+                            {p.nome || `Paciente #${p.id}`}
+                          </Text>
+                          <View style={styles.vinculadoBadge}>
+                            <Text style={styles.vinculadoBadgeText}>✓ Vinculado</Text>
+                          </View>
+                        </View>
+                        {Number(pacienteSelecionado) === Number(p.id) && (
+                          <Text style={styles.profissionalCardSelectedText}>
+                            ✓ Selecione uma data e horário abaixo
+                          </Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
             )}
           </>
         )}
@@ -625,739 +843,496 @@ export default function Agendamentos() {
               <Text style={styles.label}>Selecione o Profissional</Text>
               <TouchableOpacity 
                 onPress={async () => {
-                  console.log('🔄 Botão recarregar clicado');
-                  console.log('🔄 Token:', token ? 'presente' : 'ausente');
-                  console.log('🔄 User ID:', user?.id);
-                  setLoading(true);
+                  console.log('🔄 [MANUAL] Recarregando psicólogos...');
                   try {
-                    console.log('🔄 Chamando listarPsicologosVinculadosPorAtendimentos...');
                     const profs = await listarPsicologosVinculadosPorAtendimentos(token!);
-                    console.log('🔄 Resultado recebido:', profs);
-                    console.log('🔄 Tipo:', typeof profs);
-                    console.log('🔄 É array?', Array.isArray(profs));
-                    console.log('🔄 Quantidade:', Array.isArray(profs) ? profs.length : 'N/A');
-                    const profsArray = Array.isArray(profs) ? profs : [];
-                    console.log('🔄 Definindo profissionais com:', profsArray.length, 'itens');
-                    setProfissionais(profsArray);
-                    console.log('🔄 Estado atualizado');
+                    setProfissionais(Array.isArray(profs) ? profs : []);
+                    console.log('✅ [MANUAL] Psicólogos recarregados:', Array.isArray(profs) ? profs.length : 0);
                   } catch (e: any) {
-                    console.error('🔄 Erro ao recarregar:', e);
-                    console.error('🔄 Mensagem:', e?.message);
-                    console.error('🔄 Stack:', e?.stack);
-                    setProfissionais([]);
-                  } finally {
-                    setLoading(false);
+                    console.error('❌ [MANUAL] Erro ao recarregar profissionais:', e);
+                    Alert.alert('Erro', 'Não foi possível recarregar os psicólogos.');
                   }
                 }}
-                style={{ padding: 8, backgroundColor: Colors.tint, borderRadius: 4 }}
+                style={{ padding: 8, backgroundColor: Colors.cardAlt, borderRadius: 4, borderWidth: 1, borderColor: Colors.border }}
               >
-                <Text style={{ color: Colors.card, fontSize: 12, fontWeight: 'bold' }}>🔄 Recarregar</Text>
+                <Text style={{ color: Colors.text, fontSize: 12, fontWeight: 'bold' }}>🔄 Recarregar</Text>
               </TouchableOpacity>
             </View>
             {loading ? (
               <ActivityIndicator color={Colors.tint} size="small" style={{ marginVertical: 8 }} />
             ) : profissionais.length === 0 ? (
-              <View style={{ marginBottom: 12 }}>
-                <Text style={{ color: Colors.textSecondary, marginBottom: 8 }}>
-                  Nenhum psicólogo vinculado encontrado.
-                </Text>
-                <Text style={{ color: Colors.textSecondary, fontSize: 12 }}>
-                  Para agendar uma consulta, você precisa solicitar um atendimento na página de Psicólogos primeiro.
-                </Text>
-                <TouchableOpacity 
-                  style={[styles.button, { marginTop: 12, backgroundColor: Colors.cardAlt }]} 
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ color: Colors.textSecondary, marginBottom: 8 }}>
+                Nenhum psicólogo vinculado encontrado.
+              </Text>
+              <Text style={{ color: Colors.textSecondary, fontSize: 12 }}>
+                Para agendar uma consulta, você precisa solicitar um atendimento na página de Psicólogos primeiro.
+              </Text>
+              <TouchableOpacity 
+                style={[styles.button, { marginTop: 12, backgroundColor: Colors.cardAlt }]} 
                   onPress={() => {
                     console.log('Botão ir para psicólogos clicado');
                     router.push('/(tabs)/psicologos');
                   }}
                   activeOpacity={0.7}
-                >
-                  <Text style={[styles.buttonText, { color: Colors.text }]}>Ir para Psicólogos</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
+              >
+                <Text style={[styles.buttonText, { color: Colors.text }]}>Ir para Psicólogos</Text>
+              </TouchableOpacity>
+            </View>
+        ) : (
               <>
                 <Text style={[styles.hintText, { marginBottom: 8 }]}>
                   {profissionais.length} psicólogo(s) vinculado(s) encontrado(s)
                 </Text>
-                <View style={styles.profissionaisContainer}>
+          <View style={styles.profissionaisContainer}>
                   {profissionais.map((p) => {
                     console.log('Renderizando profissional:', p.id, p.nome, 'disponivel:', p.disponivel);
                     return (
-                      <TouchableOpacity 
-                        key={p.id} 
-                        style={[
-                          styles.profissionalCard, 
+              <TouchableOpacity 
+                key={p.id} 
+                style={[
+                  styles.profissionalCard, 
                           Number(selectedProfissional) === Number(p.id) && styles.profissionalCardSelected,
                           p.disponivel === false && styles.profissionalCardDisabled
-                        ]} 
-                        onPress={() => {
+                ]} 
+                onPress={() => {
                           // Permitir seleção se disponivel não for explicitamente false
                           if (p.disponivel !== false) {
-                            console.log('Profissional selecionado:', p.id, 'Tipo:', typeof p.id);
-                            console.log('selectedProfissional atual:', selectedProfissional, 'Tipo:', typeof selectedProfissional);
                             const novoId = Number(p.id);
-                            console.log('Definindo selectedProfissional como:', novoId);
                             setSelectedProfissional(novoId);
                             setDataInput(''); // Limpar data ao mudar profissional
-                            setSlotsDisponiveis([]);
                             setHoraInput('');
                             setShowCalendar(false);
-                            console.log('Estado atualizado');
-                          } else {
-                            console.log('Profissional não disponível:', p.id);
                           }
-                        }}
+                }}
                         disabled={p.disponivel === false}
                         activeOpacity={0.7}
-                      >
+              >
                         <View style={styles.profissionalCardContent} pointerEvents="none">
-                          <View style={styles.profissionalCardHeader}>
-                            <Text style={[
-                              styles.profissionalCardNome,
+                  <View style={styles.profissionalCardHeader}>
+                    <Text style={[
+                      styles.profissionalCardNome,
                               Number(selectedProfissional) === Number(p.id) && styles.profissionalCardNomeSelected,
                               p.disponivel === false && styles.profissionalCardNomeDisabled
-                            ]}>
+                    ]}>
                               {p.nome || `Psicólogo #${p.id}`}
-                            </Text>
-                            {p.vinculado && (
-                              <View style={styles.vinculadoBadge}>
-                                <Text style={styles.vinculadoBadgeText}>✓ Vinculado</Text>
-                              </View>
-                            )}
-                          </View>
-                          {p.crp && (
-                            <Text style={styles.profissionalCardCrp}>CRP: {p.crp}</Text>
-                          )}
-                          {p.especializacoes && Array.isArray(p.especializacoes) && p.especializacoes.length > 0 && (
-                            <Text style={styles.profissionalCardEspecializacoes}>
-                              {p.especializacoes.join(', ')}
-                            </Text>
-                          )}
+                    </Text>
+                    {p.vinculado && (
+                      <View style={styles.vinculadoBadge}>
+                        <Text style={styles.vinculadoBadgeText}>✓ Vinculado</Text>
+                      </View>
+                    )}
+                  </View>
+                  {p.crp && (
+                    <Text style={styles.profissionalCardCrp}>CRP: {p.crp}</Text>
+                  )}
+                  {p.especializacoes && Array.isArray(p.especializacoes) && p.especializacoes.length > 0 && (
+                    <Text style={styles.profissionalCardEspecializacoes}>
+                      {p.especializacoes.join(', ')}
+                    </Text>
+                  )}
                           {Number(selectedProfissional) === Number(p.id) && (
-                            <Text style={styles.profissionalCardSelectedText}>
-                              ✓ Selecione uma data e horário abaixo
-                            </Text>
-                          )}
+                    <Text style={styles.profissionalCardSelectedText}>
+                      ✓ Selecione uma data e horário abaixo
+                    </Text>
+                  )}
                           {p.disponivel === false && (
-                            <Text style={styles.profissionalCardIndisponivel}>Indisponível</Text>
-                          )}
-                        </View>
-                      </TouchableOpacity>
+                    <Text style={styles.profissionalCardIndisponivel}>Indisponível</Text>
+                  )}
+                </View>
+              </TouchableOpacity>
                     );
                   })}
-                </View>
+          </View>
               </>
             )}
           </>
         )}
 
         {/* Formulário de data/hora (mostra apenas se tiver profissional/paciente selecionado) */}
-        {(isPaciente && profissionalSelecionado) || (isPsicologo && pacienteSelecionado && psicologoId) ? (
+        {(isPaciente && selectedProfissional) || (isPsicologo && pacienteSelecionado) ? (
           <>
-            {/* Mostrar horários configurados pelo psicólogo - selecionáveis */}
-            {horariosConfigurados.length > 0 && (
-              <View style={styles.horariosConfiguradosContainer}>
-                <Text style={styles.label}>📋 Selecione um horário disponível:</Text>
-                <Text style={styles.hintText}>Clique em um horário para selecionar automaticamente a próxima data disponível</Text>
-                
-                {horariosConfigurados.map((h, idx) => {
-                  // Encontrar TODOS os dias disponíveis para este dia da semana
-                  const diasDisponiveisParaEsteDia = Array.from(diasComHorarios).filter(dia => {
-                    const [dd, mm, yyyy] = dia.split('-');
-                    const dataObj = new Date(`${yyyy}-${mm}-${dd}`);
-                    return dataObj.getDay() === h.dia_semana;
-                  });
-                  
-                  // Pegar o primeiro dia disponível (próximo dia deste dia da semana)
-                  const proximoDiaDisponivel = diasDisponiveisParaEsteDia[0];
-                  
-                  // Gerar slots do horário configurado
-                  const horaInicio = h.hora_inicio?.substring(0, 5);
-                  const horaFim = h.hora_fim?.substring(0, 5);
-                  const duracao = h.duracao_minutos || 60;
-                  
-                  // Calcular slots dentro deste intervalo
-                  const slots: string[] = [];
-                  if (horaInicio && horaFim) {
-                    const [hInicio, mInicio] = horaInicio.split(':').map(Number);
-                    const [hFim, mFim] = horaFim.split(':').map(Number);
-                    const inicioMinutos = hInicio * 60 + mInicio;
-                    const fimMinutos = hFim * 60 + mFim;
-                    
-                    for (let minutos = inicioMinutos; minutos + duracao <= fimMinutos; minutos += duracao) {
-                      const hh = Math.floor(minutos / 60);
-                      const mm = minutos % 60;
-                      slots.push(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
-                    }
-                  }
-                  
-                  const handleSelecionarHorario = async (slot: string) => {
-                    try {
-                      const profissionalId = isPsicologo ? psicologoId : selectedProfissional;
-                      console.log('handleSelecionarHorario chamado com slot:', slot);
-                      console.log('proximoDiaDisponivel:', proximoDiaDisponivel);
-                      console.log('profissionalId:', profissionalId);
-                      
-                      // Buscar o próximo dia disponível para este dia da semana
-                      let diaParaUsar = proximoDiaDisponivel;
-                      
-                      if (!diaParaUsar) {
-                        console.log('Calculando próximo dia da semana...');
-                        // Se não encontrou na lista carregada, calcular o próximo dia da semana
-                        const hoje = new Date();
-                        hoje.setHours(0, 0, 0, 0);
-                        const diaSemanaHoje = hoje.getDay();
-                        let diasParaAdicionar = h.dia_semana - diaSemanaHoje;
-                        
-                        console.log('Dia da semana hoje:', diaSemanaHoje);
-                        console.log('Dia da semana do horário:', h.dia_semana);
-                        console.log('Dias para adicionar (inicial):', diasParaAdicionar);
-                        
-                        // Se o dia da semana já passou esta semana, buscar na próxima semana
-                        if (diasParaAdicionar <= 0) {
-                          diasParaAdicionar += 7;
-                        }
-                        
-                        // Se for hoje e já passou o horário, buscar na próxima semana
-                        if (diasParaAdicionar === 0) {
-                          const agora = new Date();
-                          const [hSlot, mSlot] = slot.split(':').map(Number);
-                          const horaSlot = new Date(agora);
-                          horaSlot.setHours(hSlot, mSlot, 0, 0);
-                          
-                          if (agora >= horaSlot) {
-                            diasParaAdicionar = 7;
-                          }
-                        }
-                        
-                        console.log('Dias para adicionar (final):', diasParaAdicionar);
-                        
-                        const proximoDia = new Date(hoje);
-                        proximoDia.setDate(hoje.getDate() + diasParaAdicionar);
-                        diaParaUsar = formatarDataParaInput(proximoDia);
-                        
-                        console.log('Dia calculado:', diaParaUsar);
-                        
-                        // Verificar se este dia realmente tem slots disponíveis
-                        if (profissionalId) {
-                          try {
-                            const [dd, mm, yyyy] = diaParaUsar.split('-');
-                            const dataISO = `${yyyy}-${mm}-${dd}`;
-                            console.log('Verificando slots para:', dataISO);
-                            const response = await getSlotsDisponiveis(profissionalId, dataISO);
-                            console.log('Resposta de slots:', response);
-                            
-                            if (response.slots && response.slots.length > 0 && response.slots.includes(slot)) {
-                              // Dia encontrado e tem slots disponíveis
-                              console.log('Slot disponível encontrado! Definindo:', diaParaUsar, slot);
-                              setDataInput(diaParaUsar);
-                              setHoraInput(slot);
-                              setShowCalendar(false);
-                              return;
-                            } else {
-                              console.log('Slot não disponível neste dia, buscando próximo...');
-                              // Este dia não tem mais slots disponíveis, buscar próximo
-                              const proximoDiaTemp = new Date(proximoDia);
-                              for (let i = 0; i < 4; i++) { // Tentar até 4 semanas
-                                proximoDiaTemp.setDate(proximoDiaTemp.getDate() + 7);
-                                const dataFormatada = formatarDataParaInput(proximoDiaTemp);
-                                const [dd2, mm2, yyyy2] = dataFormatada.split('-');
-                                const dataISO2 = `${yyyy2}-${mm2}-${dd2}`;
-                                const response2 = await getSlotsDisponiveis(profissionalId, dataISO2);
-                                
-                                if (response2.slots && response2.slots.includes(slot)) {
-                                  console.log('Slot encontrado em data alternativa:', dataFormatada);
-                                  setDataInput(dataFormatada);
-                                  setHoraInput(slot);
-                                  setShowCalendar(false);
-                                  return;
-                                }
-                              }
-                              // Se não encontrou em nenhuma data, usar a primeira calculada mesmo assim
-                              console.log('Usando data calculada mesmo sem confirmação de slot');
-                              setDataInput(diaParaUsar);
-                              setHoraInput(slot);
-                              setShowCalendar(false);
-                              return;
-                            }
-                          } catch (e) {
-                            console.error('Erro ao verificar disponibilidade:', e);
-                            // Em caso de erro, usar o dia calculado mesmo assim
-                            console.log('Erro na verificação, usando data calculada:', diaParaUsar);
-                            setDataInput(diaParaUsar);
-                            setHoraInput(slot);
-                            setShowCalendar(false);
-                            return;
-                          }
-                        } else {
-                          // Se não tem profissional selecionado, ainda assim definir os valores
-                          console.log('Sem profissional selecionado, mas definindo valores mesmo assim');
-                          setDataInput(diaParaUsar);
-                          setHoraInput(slot);
-                          setShowCalendar(false);
-                          return;
-                        }
-                      }
-                      
-                      // Se já tinha dia disponível, verificar se o slot ainda está disponível
-                      if (diaParaUsar && profissionalId) {
-                        try {
-                          const [dd, mm, yyyy] = diaParaUsar.split('-');
-                          const dataISO = `${yyyy}-${mm}-${dd}`;
-                          const response = await getSlotsDisponiveis(profissionalId, dataISO);
-                          if (response.slots && response.slots.includes(slot)) {
-                            console.log('Slot confirmado disponível, definindo:', diaParaUsar, slot);
-                            setDataInput(diaParaUsar);
-                            setHoraInput(slot);
-                            setShowCalendar(false);
-                          } else {
-                            console.log('Slot não disponível mais');
-                            Alert.alert('Horário indisponível', 'Este horário já foi agendado. Por favor, selecione outro.');
-                          }
-                        } catch (e) {
-                          console.error('Erro ao verificar disponibilidade final:', e);
-                          // Em caso de erro, ainda assim definir os valores se tivermos um dia
-                          console.log('Erro na verificação final, usando valores mesmo assim');
-                          setDataInput(diaParaUsar);
-                          setHoraInput(slot);
-                          setShowCalendar(false);
-                        }
-                      } else if (diaParaUsar) {
-                        // Se não conseguiu verificar mas tem um dia, usar mesmo assim
-                        console.log('Usando dia disponível sem verificação:', diaParaUsar);
-                        setDataInput(diaParaUsar);
-                        setHoraInput(slot);
-                        setShowCalendar(false);
+            {/* Seleção de Data - Calendário Visual */}
+            <Text style={styles.label}>Selecione a Data</Text>
+            <TouchableOpacity
+              style={styles.datePickerButton}
+              onPress={() => setShowCalendar(!showCalendar)}
+            >
+              <Ionicons name="calendar-outline" size={20} color={Colors.tint} />
+              <Text style={[styles.datePickerText, !dataInput && { color: Colors.textSecondary }]}>
+                {dataInput || 'Selecione uma data'}
+              </Text>
+              <Ionicons name={showCalendar ? "chevron-up" : "chevron-down"} size={20} color={Colors.textSecondary} />
+            </TouchableOpacity>
+
+            {/* Calendário Visual */}
+            {showCalendar && (
+              <View style={styles.calendarContainer}>
+                <View style={styles.calendarHeader}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (calendarMonth === 0) {
+                        setCalendarMonth(11);
+                        setCalendarYear(calendarYear - 1);
                       } else {
-                        console.error('Nenhum dia disponível encontrado');
-                        Alert.alert('Erro', 'Não foi possível encontrar uma data disponível. Tente novamente.');
+                        setCalendarMonth(calendarMonth - 1);
                       }
-                    } catch (error) {
-                      console.error('Erro em handleSelecionarHorario:', error);
-                      Alert.alert('Erro', 'Não foi possível selecionar o horário. Tente novamente.');
-                    }
-                  };
-                  
-                  return (
-                    <TouchableOpacity 
-                      key={idx} 
-                      style={styles.horarioConfiguradoCard}
-                      activeOpacity={0.7}
-                      onPress={() => {
-                        console.log('Card de horário clicado');
-                        console.log('Slots disponíveis:', slots);
-                        console.log('proximoDiaDisponivel:', proximoDiaDisponivel);
-                        // Se houver slots, selecionar o primeiro disponível
-                        if (slots.length > 0) {
-                          console.log('Selecionando primeiro slot:', slots[0]);
-                          handleSelecionarHorario(slots[0]);
-                        } else {
-                          console.log('Nenhum slot disponível');
-                        }
-                      }}
-                    >
-                      <View style={styles.horarioConfiguradoHeader} pointerEvents="none">
-                        <Text style={styles.horarioConfiguradoDia}>
-                          {h.dia_semana_nome || ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'][h.dia_semana]}
-                        </Text>
-                        <Text style={styles.horarioConfiguradoHorario}>
-                          {horaInicio} - {horaFim}
-                        </Text>
-                      </View>
-                      <Text style={styles.horarioConfiguradoDuracao} pointerEvents="none">
-                        Duração: {duracao} minutos
-                      </Text>
-                      
-                      {/* Mostrar slots disponíveis para este horário */}
-                      {slots.length > 0 ? (
-                        proximoDiaDisponivel ? (
-                          <View style={styles.slotsDoHorarioContainer} pointerEvents="box-none">
-                            <Text style={styles.slotsDoHorarioLabel} pointerEvents="none">
-                              Próxima data disponível: {proximoDiaDisponivel.split('-').reverse().join('/')}
-                            </Text>
-                            <Text style={styles.slotsDoHorarioLabel} pointerEvents="none">Clique em um horário para selecionar:</Text>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.slotsDoHorarioList} nestedScrollEnabled>
-                              {slots.map((slot) => {
-                                const isSelected = dataInput === proximoDiaDisponivel && horaInput === slot;
-                                return (
-                                  <TouchableOpacity
-                                    key={slot}
-                                    style={[
-                                      styles.slotHorarioBtn,
-                                      isSelected && styles.slotHorarioBtnSelected
-                                    ]}
-                                    onPress={() => {
-                                      console.log('Botão de slot clicado:', slot);
-                                      handleSelecionarHorario(slot);
-                                    }}
-                                    activeOpacity={0.7}
-                                  >
-                                    <Text style={[
-                                      styles.slotHorarioBtnText,
-                                      isSelected && styles.slotHorarioBtnTextSelected
-                                    ]}>
-                                      {slot}
-                                    </Text>
-                                  </TouchableOpacity>
-                                );
-                              })}
-                            </ScrollView>
-                          </View>
-                        ) : (
-                          <View style={styles.slotsDoHorarioContainer} pointerEvents="none">
-                            <Text style={styles.slotsDoHorarioLabel}>
-                              ⏳ Carregando próximas datas disponíveis...
-                            </Text>
-                            <Text style={[styles.slotsDoHorarioLabel, { marginTop: 4 }]}>
-                              Ou clique no card para selecionar {horaInicio} (próxima {h.dia_semana_nome || ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'][h.dia_semana]})
-                            </Text>
-                          </View>
-                        )
-                      ) : (
-                        <Text style={styles.horarioConfiguradoDuracao} pointerEvents="none">
-                          Aguardando carregamento dos dias disponíveis...
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-            
-            <Text style={styles.label}>Data da Consulta</Text>
-            
-            {/* Mostrar próximos dias disponíveis se já carregados */}
-            {diasComHorarios.size > 0 ? (
-              <View style={styles.diasDisponiveisContainer}>
-                <Text style={styles.diasDisponiveisLabel}>
-                  📅 Dias disponíveis para agendamento (clique para selecionar):
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.diasDisponiveisList} nestedScrollEnabled>
-                  {Array.from(diasComHorarios).slice(0, 14).map((dia) => {
-                    const [dd, mm, yyyy] = dia.split('-');
-                    const dataObj = new Date(`${yyyy}-${mm}-${dd}`);
+                    }}
+                    style={styles.calendarNavButton}
+                  >
+                    <Ionicons name="chevron-back" size={20} color={Colors.tint} />
+                  </TouchableOpacity>
+                  <Text style={styles.calendarMonthText}>
+                    {new Date(calendarYear, calendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (calendarMonth === 11) {
+                        setCalendarMonth(0);
+                        setCalendarYear(calendarYear + 1);
+                      } else {
+                        setCalendarMonth(calendarMonth + 1);
+                      }
+                    }}
+                    style={styles.calendarNavButton}
+                  >
+                    <Ionicons name="chevron-forward" size={20} color={Colors.tint} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.calendarWeekDays}>
+                  {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
+                    <Text key={day} style={styles.calendarWeekDay}>{day}</Text>
+                  ))}
+                </View>
+                <View style={styles.calendarDays}>
+                  {getMonthDays(calendarYear, calendarMonth).map((day, idx) => {
+                    const dayStr = formatarData(day);
                     const hoje = new Date();
                     hoje.setHours(0, 0, 0, 0);
-                    const isToday = dia === formatarData(hoje);
-                    const diaSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dataObj.getDay()];
-                    const mesNome = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][dataObj.getMonth()];
+                    const isPast = day < hoje;
+                    const isSelected = dataInput === dayStr;
+                    const isToday = formatarData(hoje) === dayStr;
                     
                     return (
                       <TouchableOpacity
-                        key={dia}
+                        key={idx}
                         style={[
-                          styles.diaDisponivelBtn,
-                          dataInput === dia && styles.diaDisponivelBtnSelected
+                          styles.calendarDay,
+                          isPast && styles.calendarDayPast,
+                          isSelected && styles.calendarDaySelected,
+                          isToday && !isSelected && styles.calendarDayToday,
                         ]}
                         onPress={() => {
-                          console.log('Botão de dia clicado:', dia);
-                          console.log('Estado atual dataInput:', dataInput);
-                          // Atualizar estados de forma síncrona
-                          setDataInput(dia);
-                          setHoraInput('');
-                          setShowCalendar(false);
-                          console.log('Estados atualizados - dataInput:', dia, 'horaInput: ""');
-                          // Forçar re-render
-                          setTimeout(() => {
-                            console.log('Verificação após timeout - dataInput:', dataInput);
-                          }, 100);
+                          if (!isPast) {
+                            setDataInput(dayStr);
+                            setShowCalendar(false);
+                          }
                         }}
-                        activeOpacity={0.7}
+                        disabled={isPast}
                       >
                         <Text style={[
-                          styles.diaDisponivelDiaSemana,
-                          dataInput === dia && styles.diaDisponivelDiaSemanaSelected
+                          styles.calendarDayText,
+                          isPast && styles.calendarDayTextPast,
+                          isSelected && styles.calendarDayTextSelected,
+                          isToday && !isSelected && styles.calendarDayTextToday,
                         ]}>
-                          {diaSemana}
+                          {day.getDate()}
                         </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* Seleção de Horário - Slots */}
+            {dataInput && (
+              <>
+                <Text style={[styles.label, { marginTop: 16 }]}>Selecione o Horário</Text>
+                <ScrollView 
+                  style={styles.horariosScrollContainer}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator={true}
+                >
+                  <View style={styles.horariosGrid}>
+                    {horariosDisponiveis.map((horario) => {
+                    const isSelected = horaInput === horario;
+                    // Verificar se este horário já está agendado nesta data
+                    const jaAgendado = agendamentos.some((ag: any) => {
+                      // Normalizar data do agendamento
+                      let agData = ag.data;
+                      if (!agData && ag.data_hora) {
+                        try {
+                          const dataObj = new Date(ag.data_hora);
+                          const dd = String(dataObj.getDate()).padStart(2, '0');
+                          const mm = String(dataObj.getMonth() + 1).padStart(2, '0');
+                          const yyyy = dataObj.getFullYear();
+                          agData = `${dd}-${mm}-${yyyy}`;
+                        } catch {
+                          // Se falhar, tenta extrair do formato ISO
+                          const partes = ag.data_hora.split('T')[0].split('-');
+                          if (partes.length === 3) {
+                            agData = `${partes[2]}-${partes[1]}-${partes[0]}`;
+                          }
+                        }
+                      }
+                      
+                      // Normalizar hora do agendamento
+                      let agHora = ag.horario;
+                      if (!agHora && ag.data_hora) {
+                        const horaStr = ag.data_hora.split('T')[1];
+                        if (horaStr) {
+                          agHora = horaStr.substring(0, 5);
+                        }
+                      }
+                      
+                      return agData === dataInput && agHora === horario && ag.status !== 'cancelado';
+                    });
+                    
+                    return (
+                      <TouchableOpacity
+                        key={horario}
+                        style={[
+                          styles.horarioSlot,
+                          isSelected && styles.horarioSlotSelected,
+                          jaAgendado && styles.horarioSlotOcupado,
+                        ]}
+                        onPress={() => {
+                          if (!jaAgendado) {
+                            setHoraInput(horario);
+                          }
+                        }}
+                        disabled={jaAgendado}
+                      >
                         <Text style={[
-                          styles.diaDisponivelDia,
-                          dataInput === dia && styles.diaDisponivelDiaSelected
+                          styles.horarioSlotText,
+                          isSelected && styles.horarioSlotTextSelected,
+                          jaAgendado && styles.horarioSlotTextOcupado,
                         ]}>
-                          {dd} {mesNome}
+                          {horario}
                         </Text>
-                        {isToday && (
-                          <Text style={[
-                            styles.diaDisponivelHoje,
-                            dataInput === dia && styles.diaDisponivelHojeSelected
-                          ]}>
-                            Hoje
-                          </Text>
+                        {jaAgendado && (
+                          <Ionicons name="close-circle" size={16} color={Colors.textSecondary} />
                         )}
                       </TouchableOpacity>
                     );
                   })}
+                  </View>
                 </ScrollView>
-              </View>
-            ) : selectedProfissional && (
-              <View style={styles.diasDisponiveisContainer}>
-                <Text style={styles.hintText}>
-                  ⏳ Carregando dias disponíveis...
-                </Text>
-              </View>
-            )}
-            
-            <TouchableOpacity 
-              style={styles.inputArea} 
-              onPress={() => {
-                console.log('Input de data clicado');
-                setShowCalendar(!showCalendar);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={{ color: dataInput ? Colors.text : Colors.textSecondary }}>
-                {dataInput || 'Selecione uma data (DD-MM-AAAA) ou escolha um dia disponível acima'}
-              </Text>
-            </TouchableOpacity>
-            {showCalendar && (
-          <View style={styles.calendarContainer}>
-            <View style={styles.calendarHeader}>
-              <TouchableOpacity 
-                onPress={() => {
-                  const m = calendarMonth - 1;
-                  if (m < 0) { 
-                    setCalendarMonth(11); 
-                    setCalendarYear(calendarYear - 1); 
-                  } else { 
-                    setCalendarMonth(m); 
-                  }
-                }}
-                style={styles.calendarNavBtn}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.calendarNavText}>{'<'}</Text>
-              </TouchableOpacity>
-              <Text style={styles.calendarMonthText}>
-                {String(calendarMonth + 1).padStart(2, '0')}/{calendarYear}
-              </Text>
-              <TouchableOpacity 
-                onPress={() => {
-                  const m = calendarMonth + 1;
-                  if (m > 11) { 
-                    setCalendarMonth(0); 
-                    setCalendarYear(calendarYear + 1); 
-                  } else { 
-                    setCalendarMonth(m); 
-                  }
-                }}
-                style={styles.calendarNavBtn}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.calendarNavText}>{'>'}</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.calendarDays}>
-              {getMonthDays(calendarYear, calendarMonth).map((d, idx) => {
-                const hoje = new Date();
-                hoje.setHours(0, 0, 0, 0);
-                const dataAtual = new Date(d);
-                dataAtual.setHours(0, 0, 0, 0);
-                const isPast = dataAtual < hoje;
-                const isSelected = dataInput === formatarData(d);
-                const dataFormatada = formatarData(d);
-                const temHorarios = diasComHorarios.has(dataFormatada);
-                
-                return (
-                  <TouchableOpacity 
-                    key={idx} 
-                    style={[
-                      styles.calendarDay,
-                      isSelected && styles.calendarDaySelected,
-                      isPast && styles.calendarDayPast,
-                      temHorarios && !isPast && !isSelected && styles.calendarDayWithSlots
-                    ]} 
-                    onPress={() => {
-                      if (!isPast && temHorarios) {
-                        console.log('Dia do calendário clicado:', formatarData(d));
-                        setDataInput(formatarData(d));
-                        setShowCalendar(false);
-                        setHoraInput('');
-                      }
-                    }}
-                    disabled={isPast || !temHorarios}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[
-                      styles.calendarDayText,
-                      isSelected && styles.calendarDayTextSelected,
-                      isPast && styles.calendarDayTextPast,
-                      temHorarios && !isPast && !isSelected && styles.calendarDayTextWithSlots
-                    ]}>
-                      {d.getDate()}
-                    </Text>
-                    {temHorarios && !isPast && (
-                      <View style={styles.calendarDayDot} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <TouchableOpacity 
-              style={[styles.button, { marginTop: 8, backgroundColor: Colors.cardAlt }]} 
-              onPress={() => {
-                console.log('Botão fechar calendário clicado');
-                setShowCalendar(false);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.buttonText, { color: Colors.text }]}>Fechar</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        
-            <Text style={styles.label}>Hora da Consulta</Text>
-            {!dataInput ? (
-              <>
-                <Text style={styles.hintText}>
-                  ⏰ Selecione uma data acima para ver os horários disponíveis
-                </Text>
-                <TextInput 
-                  style={[styles.inputArea, { opacity: 0.5 }]} 
-                  placeholder="Selecione uma data primeiro" 
-                  value={horaInput} 
-                  editable={false}
-                />
-              </>
-            ) : loadingSlots ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator color={Colors.tint} size="small" />
-                <Text style={styles.hintText}>Carregando horários disponíveis...</Text>
-              </View>
-            ) : slotsDisponiveis.length > 0 ? (
-              <>
-                <Text style={styles.hintText}>
-                  ⏰ Horários disponíveis para {dataInput} (clique para selecionar):
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.slotsContainer} nestedScrollEnabled>
-                  {slotsDisponiveis.map((slot) => (
-                    <TouchableOpacity
-                      key={slot}
-                      style={[
-                        styles.slotButton,
-                        horaInput === slot && styles.slotButtonSelected,
-                      ]}
-                      onPress={() => {
-                        console.log('Botão de horário clicado:', slot);
-                        console.log('Estado atual horaInput:', horaInput);
-                        console.log('Estado atual dataInput:', dataInput);
-                        setHoraInput(slot);
-                        console.log('Estado atualizado - horaInput:', slot);
-                        // Forçar re-render
-                        setTimeout(() => {
-                          console.log('Verificação após timeout - horaInput:', horaInput);
-                        }, 100);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.slotButtonText,
-                          horaInput === slot && styles.slotButtonTextSelected,
-                        ]}
-                      >
-                        {slot}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-                <Text style={styles.hintText}>Ou digite manualmente:</Text>
-                <TextInput 
-                  style={styles.inputArea} 
-                  placeholder="14:30" 
-                  value={horaInput} 
-                  onChangeText={(text) => {
-                    const formatado = formatarHora(text);
-                    setHoraInput(formatado);
-                  }}
-                  keyboardType="numeric"
-                  maxLength={5}
-                />
-              </>
-            ) : (
-              <>
-                <Text style={[styles.hintText, { color: Colors.destructive }]}>
-                  ⚠️ Nenhum horário disponível para esta data. Tente selecionar outro dia disponível acima.
-                </Text>
-                <TextInput 
-                  style={[styles.inputArea, { opacity: 0.5 }]} 
-                  placeholder="Nenhum horário disponível" 
-                  value={horaInput} 
-                  editable={false}
-                />
+                {dataInput && !horaInput && (
+                  <Text style={styles.hintText}>Selecione um horário disponível acima</Text>
+                )}
               </>
             )}
         
-        <TouchableOpacity 
-          style={[
-            styles.button, 
-            { marginTop: 16, backgroundColor: Colors.tint },
-            ((isPaciente && !selectedProfissional) || (isPsicologo && !pacienteSelecionado) || !dataInput || !horaInput || creating) && styles.buttonDisabled
-          ]} 
-          onPress={() => {
-            console.log('Botão criar agendamento clicado');
-            handleCriarAgendamento();
-          }}
-          disabled={(isPaciente && !selectedProfissional) || (isPsicologo && !pacienteSelecionado) || !dataInput || !horaInput || creating}
-          activeOpacity={0.8}
-        >
-          {creating ? (
-            <ActivityIndicator color={Colors.card} />
-          ) : (
-            <Text style={styles.buttonText}>Criar Agendamento</Text>
-          )}
-        </TouchableOpacity>
+            {/* Resumo do Agendamento */}
+            {dataInput && horaInput && (
+              <View style={styles.resumoAgendamento}>
+                <Text style={styles.resumoTitle}>📅 Resumo do Agendamento</Text>
+                <View style={styles.resumoItem}>
+                  <Ionicons name="person-outline" size={18} color={Colors.tint} />
+                  <Text style={styles.resumoText}>
+                    {isPaciente 
+                      ? profissionais.find(p => p.id === selectedProfissional)?.nome || 'Profissional'
+                      : pacientes.find(p => p.id === pacienteSelecionado)?.nome || 'Paciente'
+                    }
+                  </Text>
+                </View>
+                <View style={styles.resumoItem}>
+                  <Ionicons name="calendar-outline" size={18} color={Colors.tint} />
+                  <Text style={styles.resumoText}>{dataInput}</Text>
+                </View>
+                <View style={styles.resumoItem}>
+                  <Ionicons name="time-outline" size={18} color={Colors.tint} />
+                  <Text style={styles.resumoText}>{horaInput}</Text>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity 
+              style={[
+                styles.button, 
+                { marginTop: 16, backgroundColor: Colors.tint },
+                ((isPaciente && !selectedProfissional) || (isPsicologo && !pacienteSelecionado) || !dataInput || !horaInput || creating) && styles.buttonDisabled
+              ]} 
+              onPress={handleSalvarAgendamento}
+              disabled={(isPaciente && !selectedProfissional) || (isPsicologo && !pacienteSelecionado) || !dataInput || !horaInput || creating}
+              activeOpacity={0.8}
+            >
+              {creating ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                  <ActivityIndicator color={Colors.card} size="small" />
+                  <Text style={[styles.buttonText, { marginLeft: 8 }]}>
+                    {editingAgendamento ? 'Salvando...' : 'Criando...'}
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name={editingAgendamento ? "checkmark-circle" : "calendar"} size={20} color={Colors.card} style={{ marginRight: 8 }} />
+                  <Text style={styles.buttonText}>
+                    {editingAgendamento ? 'Salvar Alterações' : 'Confirmar Agendamento'}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </>
         ) : null}
       </View>
 
       {/* Lista de agendamentos */}
-      <View style={{ marginTop: 24 }}>
-        <Text style={styles.title}>Meus Agendamentos</Text>
+      <View style={{ marginTop: 32 }}>
+        <View style={[styles.sectionHeader, { justifyContent: 'space-between' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="list-outline" size={24} color={Colors.tint} />
+            <Text style={styles.title}>Meus Agendamentos</Text>
+          </View>
+          <TouchableOpacity
+            onPress={recarregarAgendamentos}
+            style={{ padding: 8 }}
+            disabled={loading}
+          >
+            <Ionicons name="refresh" size={20} color={loading ? Colors.textSecondary : Colors.tint} />
+          </TouchableOpacity>
+        </View>
         {loading ? (
           <ActivityIndicator color={Colors.tint} size="large" style={{ marginTop: 32 }} />
         ) : agendamentos.length === 0 ? (
           <EmptyState icon="📅" title="Nenhum agendamento encontrado" hint="Crie um novo agendamento acima" />
         ) : (
-          agendamentos.map((ag, idx) => (
-            <View style={styles.card} key={ag.id || idx}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.date}>{ag.data || 'Data não informada'}</Text>
-                <Text style={styles.horario}>{ag.horario || ''}</Text>
+          agendamentos.map((ag, idx) => {
+            const isCancelado = ag.status === 'cancelado' || ag.status === 'Cancelado';
+            const isAgendado = ag.status === 'agendado' || ag.status === 'Agendado' || !ag.status;
+            
+            return (
+              <View style={[styles.card, isCancelado && styles.cardCancelado]} key={ag.id || idx}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardDateContainer}>
+                    <Ionicons name="calendar-outline" size={20} color={Colors.tint} />
+                    <Text style={styles.date}>{ag.data || 'Data não informada'}</Text>
+                  </View>
+                  <View style={styles.cardTimeContainer}>
+                    <Ionicons name="time-outline" size={20} color={Colors.tint} />
+                    <Text style={styles.horario}>{ag.horario || ''}</Text>
+                  </View>
+                </View>
+                
+                {isPaciente && ag.psicologo_nome && (
+                  <View style={styles.cardInfoRow}>
+                    <Ionicons name="person-outline" size={18} color={Colors.textSecondary} />
+                    <Text style={styles.profissionalNome}>Dr(a). {ag.psicologo_nome}</Text>
+                  </View>
+                )}
+                {isPsicologo && ag.paciente_nome && (
+                  <View style={styles.cardInfoRow}>
+                    <Ionicons name="person-outline" size={18} color={Colors.textSecondary} />
+                    <Text style={styles.profissionalNome}>Paciente: {ag.paciente_nome}</Text>
+                  </View>
+                )}
+                
+                <View style={styles.statusContainer}>
+                  <View style={[
+                    styles.statusBadge,
+                    isAgendado && styles.statusBadgeAgendado,
+                    isCancelado && styles.statusBadgeCancelado,
+                  ]}>
+                    <Text style={[
+                      styles.status,
+                      isAgendado && styles.statusAgendado,
+                      isCancelado && styles.statusCancelado,
+                    ]}>
+                      {isAgendado ? '✓ Agendado' : isCancelado ? '✗ Cancelado' : ag.status || 'agendado'}
+                    </Text>
+                  </View>
+                </View>
+                
+                {/* Botões de ação (apenas se não estiver cancelado) */}
+                {!isCancelado && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                    <TouchableOpacity
+                      style={[styles.button, styles.editButton, { flex: 1 }]}
+                      onPress={() => handleEditarAgendamento(ag)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="create-outline" size={20} color={Colors.card} />
+                      <Text style={styles.buttonText}>Editar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.button, styles.cancelButton, { flex: 1, opacity: excluindo ? 0.5 : 1 }]}
+                      onPress={() => {
+                        console.log('🖱️ [BOTÃO] Botão Excluir clicado para agendamento ID:', ag.id);
+                        if (ag.id) {
+                          abrirModalExclusao(ag.id);
+                        } else {
+                          Alert.alert('Erro', 'ID do agendamento não encontrado.');
+                        }
+                      }}
+                      activeOpacity={0.7}
+                      disabled={excluindo}
+                    >
+                      <Ionicons name="trash-outline" size={20} color={Colors.card} />
+                      <Text style={styles.buttonText}>Excluir</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
-              {isPaciente && ag.psicologo_nome && (
-                <Text style={styles.profissionalNome}>Dr(a). {ag.psicologo_nome}</Text>
-              )}
-              {isPsicologo && ag.paciente_nome && (
-                <Text style={styles.profissionalNome}>Paciente: {ag.paciente_nome}</Text>
-              )}
-              <View style={styles.statusContainer}>
-                <Text style={[
-                  styles.status,
-                  (ag.status === 'agendado' || ag.status === 'Agendado') && styles.statusAgendado,
-                  (ag.status === 'cancelado' || ag.status === 'Cancelado') && styles.statusCancelado,
-                  (ag.status === 'concluido' || ag.status === 'Concluído') && styles.statusConcluido
-                ]}>
-                  {ag.status || 'agendado'}
-                </Text>
-              </View>
-              {/* Botão de cancelar (apenas se não estiver cancelado) */}
-              {(ag.status !== 'cancelado' && ag.status !== 'Cancelado') && (
-                <TouchableOpacity
-                  style={[styles.button, { marginTop: 12, backgroundColor: Colors.destructive }]}
-                  onPress={() => handleCancelarAgendamento(ag.id)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.buttonText}>Cancelar Agendamento</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ))
+            );
+          })
         )}
       </View>
     </ScrollView>
+
+    {/* Modal de Confirmação de Exclusão */}
+    <Modal
+      visible={modalConfirmarExclusao}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={fecharModalExclusao}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Ionicons name="warning-outline" size={48} color={Colors.destructive} />
+            <Text style={styles.modalTitle}>Excluir Agendamento</Text>
+          </View>
+          
+          <Text style={styles.modalMessage}>
+            Tem certeza que deseja excluir este agendamento?{'\n'}
+            Esta ação não pode ser desfeita.
+          </Text>
+          
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel]}
+              onPress={fecharModalExclusao}
+              disabled={excluindo}
+            >
+              <Text style={styles.modalButtonTextCancel}>Cancelar</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonConfirm, excluindo && styles.modalButtonDisabled]}
+              onPress={confirmarExclusao}
+              disabled={excluindo}
+            >
+              {excluindo ? (
+                <ActivityIndicator size="small" color={Colors.card} />
+              ) : (
+                <>
+                  <Ionicons name="trash-outline" size={20} color={Colors.card} />
+                  <Text style={styles.modalButtonTextConfirm}>Excluir</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isSmallScreen = SCREEN_WIDTH < 360;
 
 const styles = StyleSheet.create({
   container: {
@@ -1365,20 +1340,26 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   scrollContent: {
-    padding: 24,
+    padding: isSmallScreen ? 16 : 24,
     paddingBottom: 100,
   },
   title: {
-    fontSize: 20,
+    fontSize: isSmallScreen ? 18 : 20,
     fontWeight: '600',
     marginBottom: 12,
     color: Colors.text,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: isSmallScreen ? 16 : 18,
     fontWeight: '600',
     marginBottom: 16,
     color: Colors.text,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
   },
   card: {
     padding: 16,
@@ -1396,7 +1377,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  cardDateContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   date: {
     fontSize: 18,
@@ -1408,10 +1402,16 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: Colors.headerBlue,
   },
+  cardInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 4,
+  },
   profissionalNome: {
     fontSize: 14,
     color: Colors.textSecondary,
-    marginTop: 4,
   },
   desc: {
     fontSize: 14,
@@ -1420,27 +1420,53 @@ const styles = StyleSheet.create({
   },
   statusContainer: {
     marginTop: 8,
+    marginBottom: 8,
   },
   status: {
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'capitalize',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
     alignSelf: 'flex-start',
   },
+  statusBadgeAgendado: {
+    backgroundColor: Colors.tint + '20',
+  },
+  statusBadgeCancelado: {
+    backgroundColor: Colors.destructive + '20',
+  },
   statusAgendado: {
-    backgroundColor: Colors.cardAlt,
-    color: Colors.headerBlue,
+    color: Colors.tint,
   },
   statusCancelado: {
-    backgroundColor: '#FFEBEE',
     color: Colors.destructive,
   },
   statusConcluido: {
     backgroundColor: '#E8F5E9',
     color: '#4CAF50',
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.headerBlue,
+  },
+  cancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.destructive,
+  },
+  cardCancelado: {
+    opacity: 0.7,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.destructive,
   },
   button: {
     marginTop: 8,
@@ -1448,6 +1474,8 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 8,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   buttonDisabled: {
     opacity: 0.5,
@@ -1480,12 +1508,29 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 1,
   },
+  input: {
+    backgroundColor: Colors.cardAlt,
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    color: Colors.text,
+    fontSize: 16,
+    marginBottom: 12,
+  },
   label: {
     color: Colors.text,
     fontWeight: '600',
     marginBottom: 8,
     marginTop: 8,
     fontSize: 14,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.tint,
   },
   hintText: {
     fontSize: 12,
@@ -1585,15 +1630,117 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  calendarNavBtn: {
+  calendarNavButton: {
     padding: 8,
     minWidth: 40,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  calendarNavText: {
-    fontSize: 18,
+  calendarWeekDays: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  calendarWeekDay: {
+    width: '14.28%',
+    textAlign: 'center',
+    fontSize: 12,
     fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  calendarDayToday: {
+    borderWidth: 2,
+    borderColor: Colors.tint,
+    borderRadius: 8,
+  },
+  calendarDayTextToday: {
     color: Colors.tint,
+    fontWeight: '700',
+  },
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    gap: 8,
+  },
+  datePickerText: {
+    flex: 1,
+    fontSize: 15,
+    color: Colors.text,
+  },
+  horariosScrollContainer: {
+    maxHeight: 300,
+    marginBottom: 8,
+  },
+  horariosGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingBottom: 8,
+  },
+  horarioSlot: {
+    backgroundColor: Colors.cardAlt,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    minWidth: 70,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  horarioSlotSelected: {
+    backgroundColor: Colors.tint,
+    borderColor: Colors.tintDark,
+  },
+  horarioSlotOcupado: {
+    backgroundColor: Colors.card,
+    borderColor: Colors.textSecondary,
+    opacity: 0.5,
+  },
+  horarioSlotText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  horarioSlotTextSelected: {
+    color: Colors.card,
+  },
+  horarioSlotTextOcupado: {
+    color: Colors.textSecondary,
+    textDecorationLine: 'line-through',
+  },
+  resumoAgendamento: {
+    backgroundColor: Colors.cardAlt,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.tint,
+    borderStyle: 'dashed',
+  },
+  resumoTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  resumoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  resumoText: {
+    fontSize: 15,
+    color: Colors.text,
+    fontWeight: '500',
   },
   calendarMonthText: {
     fontSize: 16,
@@ -1802,5 +1949,135 @@ const styles = StyleSheet.create({
   slotButtonTextSelected: {
     color: Colors.card,
     fontWeight: '700',
+  },
+  acompanhamentoCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    color: Colors.text,
+    fontSize: 15,
+  },
+  button: {
+    backgroundColor: Colors.tint,
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  buttonDisabled: {
+    backgroundColor: Colors.textSecondary,
+    opacity: 0.5,
+  },
+  buttonText: {
+    color: Colors.card,
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  editButton: {
+    backgroundColor: Colors.headerBlue,
+  },
+  cancelButton: {
+    backgroundColor: Colors.destructive,
+  },
+  hintText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  // Modal de Confirmação
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  modalButtonCancel: {
+    backgroundColor: Colors.border,
+  },
+  modalButtonConfirm: {
+    backgroundColor: Colors.destructive,
+  },
+  modalButtonDisabled: {
+    opacity: 0.6,
+  },
+  modalButtonTextCancel: {
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonTextConfirm: {
+    color: Colors.card,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

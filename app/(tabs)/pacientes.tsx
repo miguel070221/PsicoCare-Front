@@ -14,11 +14,25 @@ export default function PacientesTab() {
 
   useEffect(() => {
     (async () => {
-      if (!token) return;
+      if (!token) {
+        console.log('❌ Token ausente na lista de pacientes');
+        return;
+      }
+      console.log('🔍 Buscando pacientes vinculados...');
       try {
         const data = await listarAtendimentosDoPsicologo(token);
+        console.log('✅ Pacientes encontrados:', data?.length || 0);
+        if (data && data.length > 0) {
+          data.forEach((a: any, idx: number) => {
+            console.log(`  ${idx + 1}. Paciente ID: ${a.id_paciente}, Nome: ${a.paciente_nome}, Status: ${a.status}`);
+          });
+        } else {
+          console.log('⚠️ Nenhum paciente vinculado encontrado');
+        }
         setAtendimentos(data || []);
-      } catch {
+      } catch (e: any) {
+        console.error('❌ Erro ao buscar pacientes:', e);
+        console.error('❌ Mensagem:', e?.message);
         setAtendimentos([]);
       }
     })();

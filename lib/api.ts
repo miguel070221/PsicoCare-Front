@@ -37,17 +37,29 @@ export const getAcompanhamentosPaciente = async (pacienteId: number, token: stri
 // Removido: endpoint antigo de usuários genéricos
 /**
  * Buscar agendamentos do usuário autenticado
+ * IMPORTANTE: Não precisa passar usuarioId, o backend usa o ID do token automaticamente
  */
 export const getAgendamentosUsuario = async (usuarioId: number, token: string): Promise<any[]> => {
-  return await getComToken(`/agendamentos?usuarioId=${usuarioId}`, token);
+  // O backend agora ignora o usuarioId da query e usa o ID do token
+  // Mantemos o parâmetro para compatibilidade, mas ele não é mais usado
+  return await getComToken(`/agendamentos`, token);
 };
 
 /**
  * Buscar agendamentos do psicólogo autenticado
+ * IMPORTANTE: Não precisa passar profissionalId, o backend usa o ID do token automaticamente
  */
 export const getAgendamentosPsicologo = async (token: string): Promise<any[]> => {
-  const psicologo = await getPsicologoMe(token);
-  return await getComToken(`/agendamentos?profissionalId=${psicologo.id}`, token);
+  // O backend agora ignora o profissionalId da query e usa o ID do token
+  return await getComToken(`/agendamentos`, token);
+};
+
+/**
+ * Buscar agendamentos de um paciente específico (apenas para psicólogos)
+ * Verifica se há vínculo entre o psicólogo e o paciente antes de retornar
+ */
+export const getAgendamentosPaciente = async (pacienteId: number, token: string): Promise<any[]> => {
+  return await getComToken(`/agendamentos/paciente/${pacienteId}`, token);
 };
 /**
  * Criar agendamento
@@ -56,14 +68,170 @@ export const criarAgendamento = async (
   dados: { profissional_id?: number; data_hora: string; paciente_id?: number },
   token: string
 ): Promise<any> => {
-  return await apiFetch('/agendamentos', 'POST', dados, token);
+  console.log('📤 criarAgendamento chamado:', { dados, tokenPresente: !!token });
+  try {
+    const resultado = await apiFetch('/agendamentos', 'POST', dados, token);
+    console.log('✅ criarAgendamento sucesso:', resultado);
+    return resultado;
+  } catch (error: any) {
+    console.error('❌ criarAgendamento erro:', error);
+    console.error('❌ Status:', error?.response?.status);
+    console.error('❌ Dados:', error?.response?.data);
+    throw error;
+  }
 };
 
 /**
- * Cancelar agendamento
+ * Atualizar agendamento
+ */
+export const atualizarAgendamento = async (
+  agendamentoId: number,
+  dados: { data_hora: string },
+  token: string
+): Promise<any> => {
+  return await apiFetch(`/agendamentos/${agendamentoId}`, 'PUT', dados, token);
+};
+
+/**
+ * Cancelar/Deletar agendamento (agora deleta permanentemente)
  */
 export const cancelarAgendamento = async (agendamentoId: number, token: string): Promise<any> => {
-  return await apiFetch(`/agendamentos/${agendamentoId}/cancelar`, 'PUT', {}, token);
+  console.log('📤 [API] ====== cancelarAgendamento (deletar) CHAMADO ======');
+  console.log('📤 [API] agendamentoId:', agendamentoId);
+  console.log('📤 [API] agendamentoId tipo:', typeof agendamentoId);
+  console.log('📤 [API] tokenPresente:', !!token);
+  console.log('📤 [API] token length:', token?.length);
+  console.log('📤 [API] BASE_URL:', BASE_URL);
+  console.log('📤 [API] Endpoint completo:', `${BASE_URL}/agendamentos/${agendamentoId}/cancelar`);
+  
+  try {
+    // Usar a rota de cancelar que agora deleta o agendamento
+    console.log('📤 [API] Fazendo requisição PUT para /agendamentos/:id/cancelar');
+    console.log('📤 [API] Timestamp:', new Date().toISOString());
+    
+    const resultado = await apiFetch(`/agendamentos/${agendamentoId}/cancelar`, 'PUT', {}, token);
+    
+    console.log('✅ [API] ====== RESPOSTA RECEBIDA ======');
+    console.log('✅ [API] Resultado tipo:', typeof resultado);
+    console.log('✅ [API] Resultado:', JSON.stringify(resultado, null, 2));
+    console.log('✅ [API] Agendamento deletado com sucesso!');
+    
+    return resultado;
+  } catch (error: any) {
+    console.error('❌ [API] ====== ERRO AO DELETAR AGENDAMENTO ======');
+    console.error('❌ [API] Error tipo:', typeof error);
+    console.error('❌ [API] Error name:', error?.name);
+    console.error('❌ [API] Error message:', error?.message);
+    console.error('❌ [API] Error stack:', error?.stack);
+    console.error('❌ [API] Error response:', error?.response);
+    console.error('❌ [API] Status:', error?.response?.status);
+    console.error('❌ [API] Status Text:', error?.response?.statusText);
+    console.error('❌ [API] Dados:', error?.response?.data);
+    console.error('❌ [API] Error completo:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    
+    // Re-throw o erro para que o frontend possa tratá-lo
+    throw error;
+  }
+};
+
+/**
+ * Deletar agendamento (rota alternativa usando DELETE)
+ */
+/**
+ * Funções de Administração
+ */
+
+/**
+ * Listar todos os usuários (pacientes e psicólogos) com informações completas (admin)
+ */
+export const listarUsuariosCompleto = async (token: string): Promise<{ pacientes: any[]; psicologos: any[] }> => {
+  return await apiFetch('/admin/usuarios/completo', 'GET', undefined, token);
+};
+
+/**
+ * Obter detalhes completos de um paciente (admin)
+ */
+export const getPacienteDetalhes = async (pacienteId: number, token: string): Promise<any> => {
+  return await apiFetch(`/admin/pacientes/${pacienteId}`, 'GET', undefined, token);
+};
+
+/**
+ * Obter detalhes completos de um psicólogo (admin)
+ */
+export const getPsicologoDetalhes = async (psicologoId: number, token: string): Promise<any> => {
+  return await apiFetch(`/admin/psicologos/${psicologoId}`, 'GET', undefined, token);
+};
+
+/**
+ * Editar paciente (admin)
+ */
+export const editarPacienteAdmin = async (
+  pacienteId: number,
+  dados: {
+    nome?: string;
+    email?: string;
+    idade?: number | null;
+    genero?: string;
+    preferencia_comunicacao?: string;
+    contato_preferido?: string;
+    link_whatsapp?: string;
+    link_telegram?: string;
+    link_discord?: string;
+    link_email?: string;
+    telefone?: string;
+  },
+  token: string
+): Promise<any> => {
+  return await apiFetch(`/admin/pacientes/${pacienteId}`, 'PUT', dados, token);
+};
+
+/**
+ * Editar psicólogo (admin)
+ */
+export const editarPsicologoAdmin = async (
+  psicologoId: number,
+  dados: {
+    nome?: string;
+    email?: string;
+    crp?: string;
+    especializacoes?: string[];
+    bio?: string;
+    foto_perfil?: string;
+    disponivel?: boolean;
+    perfil_completo?: boolean;
+    aprovado?: boolean;
+  },
+  token: string
+): Promise<any> => {
+  return await apiFetch(`/admin/psicologos/${psicologoId}`, 'PUT', dados, token);
+};
+
+/**
+ * Excluir paciente (admin)
+ */
+export const excluirPacienteAdmin = async (pacienteId: number, token: string): Promise<any> => {
+  return await apiFetch(`/admin/pacientes/${pacienteId}`, 'DELETE', undefined, token);
+};
+
+/**
+ * Excluir psicólogo (admin)
+ */
+export const excluirPsicologoAdmin = async (psicologoId: number, token: string): Promise<any> => {
+  return await apiFetch(`/admin/psicologos/${psicologoId}`, 'DELETE', undefined, token);
+};
+
+export const deletarAgendamento = async (agendamentoId: number, token: string): Promise<any> => {
+  console.log('📤 deletarAgendamento chamado:', { agendamentoId, tokenPresente: !!token });
+  try {
+    const resultado = await apiFetch(`/agendamentos/${agendamentoId}`, 'DELETE', {}, token);
+    console.log('✅ Agendamento deletado com sucesso:', resultado);
+    return resultado;
+  } catch (error: any) {
+    console.error('❌ Erro ao deletar agendamento:', error);
+    console.error('❌ Status:', error?.response?.status);
+    console.error('❌ Dados:', error?.response?.data);
+    throw error;
+  }
 };
 
 /**
@@ -87,27 +255,45 @@ export const toggleDisponibilidade = async (disponivel: boolean, token: string):
 };
 
 /**
- * Criar avaliação
- */
-export const criarAvaliacao = async (dados: { profissional_id: number; nota: number; comentario?: string }, token: string): Promise<any> => {
-  return await apiFetch('/avaliacoes', 'POST', dados, token);
-};
-
-/**
- * Buscar avaliações públicas
- */
-export const getAvaliacoesPublicas = async (): Promise<any[]> => {
-  return await apiFetch('/avaliacoes/publicas');
-};
-/**
  * Atualização de usuário
  */
 export const updateUsuario = async (id: number, dados: { nome: string; email: string }, token: string): Promise<any> => {
   return await apiFetch(`/usuarios/${id}`, 'PUT', dados, token);
 };
 
-const BASE_URL = 'http://localhost:3333';
+/**
+ * Configuração da URL base da API
+ * Detecta automaticamente o ambiente e usa a URL apropriada
+ */
+const getBaseUrl = (): string => {
+  // Se houver uma variável de ambiente definida, usa ela (prioridade)
+  if (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
 
+  // Para web, usa localhost
+  if (typeof window !== 'undefined' && window.location) {
+    return 'http://localhost:3333';
+  }
+
+  // Para React Native/Expo
+  // No Android emulador, usa 10.0.2.2 em vez de localhost
+  // No iOS emulador, localhost funciona
+  // Para dispositivos físicos, você precisa usar o IP da sua máquina na rede local
+  // Exemplo: 'http://192.168.1.100:3333' (substitua pelo seu IP)
+  
+  // Por padrão, tenta localhost (funciona no iOS emulador e web)
+  // Para Android emulador, você pode mudar para 'http://10.0.2.2:3333'
+  // Para dispositivo físico, use o IP da sua máquina: 'http://SEU_IP:3333'
+  return 'http://localhost:3333';
+};
+
+const BASE_URL = getBaseUrl();
+
+// Log da URL base para debug (apenas em desenvolvimento)
+if (__DEV__) {
+  console.log('🔗 API Base URL:', BASE_URL);
+}
 
 interface LoginResponse {
   token: string;
@@ -150,32 +336,102 @@ const apiFetch = async (
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  if (response.status === 204) {
-    return null;
-  }
-
-  const raw = await response.text();
-  let data: any = null;
-  if (raw && raw.length > 0) {
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      data = raw; // não-JSON, mantém como texto
+  // Log detalhado para debugging (especialmente para criarNotaSessao e agendamentos)
+  if ((endpoint.includes('notas-sessoes') || endpoint.includes('agendamentos')) && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
+    const acao = endpoint.includes('cancelar') ? 'Cancelar/Deletar agendamento' : 
+                 endpoint.includes('agendamentos') && method === 'POST' ? 'Criando agendamento' :
+                 endpoint.includes('agendamentos') && method === 'PUT' ? 'Atualizando agendamento' :
+                 endpoint.includes('agendamentos') && method === 'DELETE' ? 'Deletando agendamento' :
+                 'Criando nota';
+    console.log('🌐 [apiFetch] Requisição:', acao);
+    console.log('🌐 [apiFetch] URL completa:', `${BASE_URL}${endpoint}`);
+    console.log('🌐 [apiFetch] Method:', method);
+    console.log('🌐 [apiFetch] Body:', body ? JSON.stringify(body, null, 2) : 'vazio');
+    console.log('🌐 [apiFetch] Token presente:', !!token);
+    if (token) {
+      console.log('🌐 [apiFetch] Token (primeiros 20 chars):', token.substring(0, 20) + '...');
     }
   }
 
-  if (!response.ok) {
-    const msg = (data && (data.erro || data.message)) || (typeof data === 'string' ? data : 'Erro na requisição');
-    throw new Error(msg);
-  }
+  try {
+    const response = await fetch(`${BASE_URL}${endpoint}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
 
-  return data;
+    if ((endpoint.includes('notas-sessoes') || endpoint.includes('agendamentos')) && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
+      const tipo = endpoint.includes('cancelar') ? 'cancelar/deletar agendamento' :
+                   endpoint.includes('agendamentos') ? 'agendamento' : 'nota';
+      console.log('🌐 [apiFetch] ====== RESPOSTA RECEBIDA ======');
+      console.log('🌐 [apiFetch] Tipo:', tipo);
+      console.log('🌐 [apiFetch] Status:', response.status);
+      console.log('🌐 [apiFetch] Status Text:', response.statusText);
+      console.log('🌐 [apiFetch] OK:', response.ok);
+      console.log('🌐 [apiFetch] URL:', response.url);
+      console.log('🌐 [apiFetch] Redirected:', response.redirected);
+      console.log('🌐 [apiFetch] Type:', response.type);
+      
+      if (!response.ok) {
+        console.error('🌐 [apiFetch] ⚠️ RESPOSTA NÃO OK! Status:', response.status);
+      }
+    }
+
+    if (response.status === 204) {
+      console.log('🌐 [apiFetch] Resposta 204 (No Content)');
+      return null;
+    }
+
+    const raw = await response.text();
+    console.log('🌐 [apiFetch] Resposta raw length:', raw?.length);
+    console.log('🌐 [apiFetch] Resposta raw (primeiros 500 chars):', raw?.substring(0, 500));
+    
+    let data: any = null;
+    if (raw && raw.length > 0) {
+      try {
+        data = JSON.parse(raw);
+        if ((endpoint.includes('notas-sessoes') || endpoint.includes('agendamentos')) && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
+          console.log('🌐 [apiFetch] Dados parseados:', JSON.stringify(data, null, 2));
+        }
+      } catch (parseError) {
+        console.error('🌐 [apiFetch] Erro ao parsear JSON:', parseError);
+        console.error('🌐 [apiFetch] Raw que falhou:', raw);
+        data = raw; // não-JSON, mantém como texto
+        if ((endpoint.includes('notas-sessoes') || endpoint.includes('agendamentos')) && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
+          console.log('🌐 [apiFetch] Resposta não é JSON, mantendo como texto');
+        }
+      }
+    } else {
+      console.log('🌐 [apiFetch] Resposta vazia (sem body)');
+    }
+
+    if (!response.ok) {
+      const msg = (data && (data.erro || data.message)) || (typeof data === 'string' ? data : 'Erro na requisição');
+      const error: any = new Error(msg);
+      error.response = { status: response.status, statusText: response.statusText, data };
+      error.status = response.status;
+      if ((endpoint.includes('notas-sessoes') || endpoint.includes('agendamentos')) && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
+        console.error('🌐 [apiFetch] ====== ERRO NA RESPOSTA ======');
+        console.error('🌐 [apiFetch] Tipo:', endpoint.includes('cancelar') ? 'cancelar/deletar agendamento' : endpoint.includes('agendamentos') ? 'agendamento' : 'nota');
+        console.error('🌐 [apiFetch] Mensagem:', msg);
+        console.error('🌐 [apiFetch] Status:', response.status);
+        console.error('🌐 [apiFetch] Status Text:', response.statusText);
+        console.error('🌐 [apiFetch] Dados do erro:', JSON.stringify(data, null, 2));
+        console.error('🌐 [apiFetch] Raw response:', raw?.substring(0, 500));
+      }
+      throw error;
+    }
+
+    return data;
+  } catch (error: any) {
+    if (endpoint.includes('notas-sessoes') && method === 'POST') {
+      console.error('🌐 Erro na requisição:');
+      console.error('🌐 Tipo:', error?.name);
+      console.error('🌐 Mensagem:', error?.message);
+      console.error('🌐 Stack:', error?.stack);
+    }
+    throw error;
+  }
 };
 
 /**
@@ -190,7 +446,38 @@ export const loginPsicologo = async ({ email, senha }: LoginPayload): Promise<Lo
 };
 
 export const loginAdmin = async ({ email, senha }: LoginPayload): Promise<LoginResponse> => {
-  return await apiFetch('/admin/login', 'POST', { email, senha });
+  console.log('🔐 [LOGIN ADMIN] Iniciando login de admin...');
+  console.log('🔐 [LOGIN ADMIN] Email:', email);
+  console.log('🔐 [LOGIN ADMIN] URL:', `${BASE_URL}/admin/login`);
+  
+  try {
+    const response = await fetch(`${BASE_URL}/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, senha }),
+    });
+    
+    console.log('🔐 [LOGIN ADMIN] Status da resposta:', response.status);
+    console.log('🔐 [LOGIN ADMIN] Response OK:', response.ok);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ erro: 'Erro ao fazer login' }));
+      console.error('❌ [LOGIN ADMIN] Erro na resposta:', errorData);
+      throw new Error(errorData.erro || 'Erro ao fazer login');
+    }
+    
+    const data = await response.json();
+    console.log('✅ [LOGIN ADMIN] Login bem-sucedido!');
+    console.log('✅ [LOGIN ADMIN] Token recebido:', data.token ? 'Sim' : 'Não');
+    console.log('✅ [LOGIN ADMIN] Role:', data.role);
+    console.log('✅ [LOGIN ADMIN] Nome:', data.nome);
+    
+    return data;
+  } catch (error: any) {
+    console.error('❌ [LOGIN ADMIN] Erro ao fazer login:', error);
+    console.error('❌ [LOGIN ADMIN] Mensagem:', error.message);
+    throw error;
+  }
 };
 
 export const solicitarAtendimento = async (id_psicologo: number, token: string): Promise<any> => {
@@ -214,17 +501,63 @@ export const getPacienteMe = async (token: string): Promise<any> => {
 };
 
 export const updatePacienteMe = async (
-  dados: { nome?: string; idade?: number | null; genero?: string; preferencia_comunicacao?: string; contato_preferido?: string },
+  dados: { 
+    nome?: string;
+    email?: string;
+    idade?: number | null; 
+    genero?: string; 
+    preferencia_comunicacao?: string; 
+    contato_preferido?: string;
+    link_whatsapp?: string;
+    link_telegram?: string;
+    link_discord?: string;
+    link_email?: string;
+    telefone?: string;
+  },
   token: string
 ): Promise<any> => {
-  return await apiFetch('/pacientes/me', 'PUT', dados, token);
+  console.log('🟢 [API] updatePacienteMe chamado');
+  console.log('🟢 [API] Dados:', dados);
+  console.log('🟢 [API] Token presente:', !!token);
+  try {
+    const resultado = await apiFetch('/pacientes/me', 'PUT', dados, token);
+    console.log('✅ [API] updatePacienteMe sucesso:', resultado);
+    return resultado;
+  } catch (error: any) {
+    console.error('❌ [API] updatePacienteMe erro:', error);
+    console.error('❌ [API] Erro message:', error?.message);
+    console.error('❌ [API] Erro response:', error?.response);
+    throw error;
+  }
 };
 
 export const updatePsicologoMe = async (
-  dados: { nome?: string; crp?: string; especializacoes?: string[]; bio?: string; foto_perfil?: string; perfil_completo?: boolean },
+  dados: { 
+    nome?: string; 
+    email?: string;
+    crp?: string; 
+    especializacoes?: string[]; 
+    bio?: string; 
+    foto_perfil?: string; 
+    telefone?: string | null;
+    redes_sociais?: any;
+    perfil_completo?: boolean 
+  },
   token: string
 ): Promise<any> => {
-  return await apiFetch('/psicologos/me', 'PUT', dados, token);
+  console.log('🟢 [API] updatePsicologoMe chamado');
+  console.log('🟢 [API] Dados:', dados);
+  console.log('🟢 [API] Token presente:', !!token);
+  try {
+    const resultado = await apiFetch('/psicologos/me', 'PUT', dados, token);
+    console.log('✅ [API] updatePsicologoMe sucesso:', resultado);
+    return resultado;
+  } catch (error: any) {
+    console.error('❌ [API] updatePsicologoMe erro:', error);
+    console.error('❌ [API] Erro message:', error?.message);
+    console.error('❌ [API] Erro response:', error?.response);
+    throw error;
+  }
 };
 
 export const getPsicologoMe = async (token: string): Promise<any> => {
@@ -232,7 +565,18 @@ export const getPsicologoMe = async (token: string): Promise<any> => {
 };
 
 export const listarAtendimentosDoPsicologo = async (token: string): Promise<any[]> => {
-  return await apiFetch('/atendimentos/psicologo/meus', 'GET', undefined, token);
+  try {
+    const result = await apiFetch('/atendimentos/psicologo/meus', 'GET', undefined, token);
+    // Garantir que sempre retorne um array
+    if (Array.isArray(result)) {
+      return result;
+    }
+    console.warn('⚠️ listarAtendimentosDoPsicologo: resposta não é um array:', result);
+    return [];
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar atendimentos do psicólogo:', error?.message || error);
+    return [];
+  }
 };
 
 export const listarAtendimentosDoPaciente = async (token: string): Promise<any[]> => {
@@ -240,32 +584,16 @@ export const listarAtendimentosDoPaciente = async (token: string): Promise<any[]
 };
 
 export const listarPsicologosVinculadosPorAtendimentos = async (token: string): Promise<any[]> => {
-  console.log('API: listarPsicologosVinculadosPorAtendimentos chamado');
-  console.log('API: token presente:', !!token);
-  console.log('API: URL:', `${BASE_URL}/psicologos/vinculados`);
-  
   try {
     const result = await apiFetch('/psicologos/vinculados', 'GET', undefined, token);
-    console.log('API: Resultado recebido:', result);
-    console.log('API: Tipo:', Array.isArray(result) ? 'array' : typeof result);
-    console.log('API: Quantidade:', Array.isArray(result) ? result.length : 'N/A');
     
     // Garantir que sempre retorne um array
     if (Array.isArray(result)) {
       return result;
-    } else if (result === null || result === undefined) {
-      console.warn('API: Resultado é null/undefined, retornando array vazio');
-      return [];
-    } else {
-      console.warn('API: Resultado não é array, tentando converter:', result);
-      return [];
     }
+    return [];
   } catch (error: any) {
-    console.error('API: Erro ao buscar psicólogos vinculados:', error);
-    console.error('API: Mensagem:', error?.message);
-    console.error('API: Status:', error?.response?.status);
-    console.error('API: Dados:', error?.response?.data);
-    // Retornar array vazio em caso de erro para permitir fallback
+    console.error('Erro ao buscar psicólogos vinculados:', error?.message || error);
     return [];
   }
 };
@@ -411,9 +739,34 @@ export const cadastrarUsuario = async (dados: UsuarioCadastro): Promise<any> => 
   });
 };
 
+
 /**
  * GET com autenticação
  */
 export const getComToken = async (endpoint: string, token: string): Promise<any> => {
   return await apiFetch(endpoint, 'GET', undefined, token);
+};
+
+/**
+ * Listar avaliações públicas
+ */
+export const getAvaliacoesPublicas = async (): Promise<any[]> => {
+  return await apiFetch('/avaliacoes/publicas', 'GET', undefined, undefined);
+};
+
+/**
+ * Criar avaliação
+ */
+export const criarAvaliacao = async (
+  dados: { profissional_id: number; nota: number; comentario?: string; id_agendamento?: number },
+  token: string
+): Promise<any> => {
+  return await apiFetch('/avaliacoes', 'POST', dados, token);
+};
+
+/**
+ * Listar avaliações do usuário autenticado
+ */
+export const getAvaliacoes = async (token: string): Promise<any[]> => {
+  return await apiFetch('/avaliacoes', 'GET', undefined, token);
 };

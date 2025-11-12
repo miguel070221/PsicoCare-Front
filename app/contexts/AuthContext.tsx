@@ -68,14 +68,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
-    await AsyncStorage.removeItem('token');
-    setUser(null);
-    setToken(null);
-    setTimeout(() => {
-      if (typeof window !== 'undefined') {
-        window.location.reload();
-      }
-    }, 100);
+    console.log('🔓 [AUTH] Iniciando signOut...');
+    try {
+      await AsyncStorage.removeItem('token');
+      console.log('🔓 [AUTH] Token removido do AsyncStorage');
+      setUser(null);
+      setToken(null);
+      console.log('🔓 [AUTH] Estado do usuário limpo');
+    } catch (error) {
+      console.error('❌ [AUTH] Erro ao fazer signOut:', error);
+      // Mesmo com erro, limpar o estado
+      setUser(null);
+      setToken(null);
+    }
   };
 
   return (

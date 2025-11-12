@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Modal, Pressable } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Modal, Pressable, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 import { listarAtendimentosDoPsicologo, getAgendamentosUsuario, listarNotasSessoes, criarNotaSessao, atualizarNotaSessao, removerNotaSessao } from '../../lib/api';
@@ -37,16 +37,32 @@ export default function NotasSessoesTab() {
     notasRef.current = notas;
   }, [notas]);
 
+  // Definir carregarNotas ANTES de usá-lo nos useEffects
+  const carregarNotas = useCallback(async () => {
+    if (!token || !pacienteSelecionado) {
+      setNotas([]);
+      return;
+    }
+    try {
+      const notasAPI = await listarNotasSessoes(pacienteSelecionado, token);
+      setNotas(Array.isArray(notasAPI) ? notasAPI : []);
+      notasRef.current = Array.isArray(notasAPI) ? notasAPI : [];
+    } catch (e: any) {
+      console.error('Erro ao carregar notas:', e);
+      setNotas([]);
+      notasRef.current = [];
+    }
+  }, [token, pacienteSelecionado]);
+
   useEffect(() => {
     (async () => {
       if (!token) return;
       setLoading(true);
       try {
         const data = await listarAtendimentosDoPsicologo(token);
-        setAtendimentos(data || []);
-        // Carregar notas (por enquanto do localStorage, depois da API)
-        await carregarNotas();
-      } catch (e) {
+        setAtendimentos(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        console.error('Erro ao carregar atendimentos:', e);
         setAtendimentos([]);
       } finally {
         setLoading(false);
@@ -54,35 +70,23 @@ export default function NotasSessoesTab() {
     })();
   }, [token]);
 
+  // Carregar notas quando um paciente for selecionado
+  useEffect(() => {
+    if (pacienteSelecionado && token) {
+      console.log('🔍 Carregando notas para paciente:', pacienteSelecionado);
+      carregarNotas();
+    } else {
+      console.log('⚠️ Limpando notas - paciente não selecionado ou sem token');
+      setNotas([]);
+    }
+  }, [pacienteSelecionado, token, carregarNotas]);
+
   // Debug: monitorar mudanças nas notas
   useEffect(() => {
     console.log('=== ESTADO DE NOTAS ATUALIZADO ===');
     console.log('Total de notas:', notas.length);
     console.log('Notas:', JSON.stringify(notas.map(n => ({ id: n.id, titulo: n.titulo }))));
   }, [notas]);
-
-  const carregarNotas = async () => {
-    if (!token) return;
-    try {
-      const notasAPI = await listarNotasSessoes(pacienteSelecionado || undefined, token);
-      setNotas(notasAPI || []);
-      notasRef.current = notasAPI || [];
-    } catch (e: any) {
-      console.error('Erro ao carregar notas:', e);
-      // Se houver erro, tentar carregar do AsyncStorage como fallback
-      try {
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-        const notasSalvas = await AsyncStorage.getItem('notas_sessoes');
-        if (notasSalvas) {
-          const notasArray = JSON.parse(notasSalvas);
-          setNotas(notasArray);
-          notasRef.current = notasArray;
-        }
-      } catch (e2) {
-        setNotas([]);
-      }
-    }
-  };
 
   const salvarNotas = async (novasNotas: Nota[]) => {
     // Esta função não é mais usada, mas mantida para compatibilidade
@@ -116,39 +120,108 @@ export default function NotasSessoesTab() {
   };
 
   const salvarNota = async () => {
-    if (!titulo.trim() || !conteudo.trim()) {
-      Alert.alert('Atenção', 'Preencha todos os campos obrigatórios:\n\n• Título\n• Conteúdo');
+    console.log('🟢🟢🟢 BOTÃO SALVAR PRESSIONADO 🟢🟢🟢');
+    console.log('💾 Tentando salvar nota...');
+    console.log('💾 Título:', titulo);
+    console.log('💾 Conteúdo:', conteudo?.substring(0, 50) + '...');
+    console.log('💾 Paciente selecionado:', pacienteSelecionado);
+    console.log('💾 Editando nota:', editandoNota?.id);
+    console.log('💾 Token presente:', !!token);
+    console.log('💾 Estado salvando ANTES:', salvando);
+    
+    // Validações iniciais
+    if (!titulo || !titulo.trim()) {
+      console.error('❌ Validação falhou: Título vazio');
+      Alert.alert('Atenção', 'Preencha o campo Título.');
       return;
     }
-    if (!pacienteSelecionado || !token) return;
+    
+    if (!conteudo || !conteudo.trim()) {
+      console.error('❌ Validação falhou: Conteúdo vazio');
+      Alert.alert('Atenção', 'Preencha o campo Conteúdo.');
+      return;
+    }
+    
+    if (!pacienteSelecionado) {
+      console.error('❌ Validação falhou: Nenhum paciente selecionado');
+      Alert.alert('Atenção', 'Selecione um paciente primeiro.');
+      return;
+    }
+    
+    if (!token) {
+      console.error('❌ Validação falhou: Token ausente');
+      Alert.alert('Erro', 'Você precisa estar autenticado.');
+      return;
+    }
 
+    console.log('✅ Todas as validações passaram, iniciando salvamento...');
     setSalvando(true);
+    console.log('💾 Estado salvando DEPOIS de setSalvando(true):', true);
     try {
       if (editandoNota?.id) {
         // Editar nota existente
+        console.log('📝 Editando nota ID:', editandoNota.id);
         await atualizarNotaSessao(editandoNota.id, {
           titulo: titulo.trim(),
           conteudo: conteudo.trim(),
           data_sessao: editandoNota.data_sessao
         }, token);
+        console.log('✅ Nota atualizada com sucesso');
         Alert.alert('Sucesso', 'Nota atualizada com sucesso!');
       } else {
         // Nova nota
-        await criarNotaSessao({
+        console.log('➕ Criando nova nota para paciente:', pacienteSelecionado);
+        console.log('➕ Tipo do pacienteSelecionado:', typeof pacienteSelecionado);
+        console.log('➕ Token presente:', !!token);
+        console.log('➕ Título:', titulo.trim());
+        console.log('➕ Conteúdo length:', conteudo.trim().length);
+        
+        const dadosNota = {
           id_paciente: pacienteSelecionado,
           titulo: titulo.trim(),
           conteudo: conteudo.trim(),
-        }, token);
-        Alert.alert('Sucesso', 'Nota criada com sucesso!');
+        };
+        console.log('➕ Dados da nota (antes do envio):', JSON.stringify(dadosNota, null, 2));
+        
+        try {
+          const resultado = await criarNotaSessao(dadosNota, token);
+          console.log('✅ Nota criada com sucesso!');
+          console.log('✅ Resultado:', JSON.stringify(resultado, null, 2));
+          Alert.alert('Sucesso', 'Nota criada com sucesso!');
+        } catch (createError: any) {
+          console.error('❌ Erro específico ao criar nota:', createError);
+          throw createError; // Re-lançar para ser capturado pelo catch externo
+        }
       }
       
       // Recarregar notas
+      console.log('🔄 Recarregando notas...');
       await carregarNotas();
+      console.log('✅ Notas recarregadas');
       fecharModal();
     } catch (e: any) {
-      console.error('Erro ao salvar nota:', e);
-      Alert.alert('Erro', e.message || 'Não foi possível salvar a nota. Tente novamente.');
+      console.error('❌❌❌ ERRO AO SALVAR NOTA ❌❌❌');
+      console.error('❌ Erro completo:', e);
+      console.error('❌ Tipo do erro:', typeof e);
+      console.error('❌ Mensagem:', e?.message);
+      console.error('❌ Response:', e?.response);
+      console.error('❌ Response data:', e?.response?.data);
+      console.error('❌ Status:', e?.response?.status);
+      console.error('❌ Stack:', e?.stack);
+      
+      const mensagemErro = e?.response?.data?.erro || e?.response?.data?.detalhes || e?.message || 'Não foi possível salvar a nota. Tente novamente.';
+      const detalhesErro = e?.response?.data?.detalhes || e?.response?.data?.codigo || '';
+      
+      console.error('❌ Mensagem de erro para o usuário:', mensagemErro);
+      console.error('❌ Detalhes:', detalhesErro);
+      
+      Alert.alert(
+        'Erro ao salvar nota', 
+        `${mensagemErro}${detalhesErro ? `\n\nDetalhes: ${detalhesErro}` : ''}`,
+        [{ text: 'OK', onPress: () => console.log('Usuário fechou o alerta') }]
+      );
     } finally {
+      console.log('🔵 Finally: setando salvando como false');
       setSalvando(false);
     }
   };
@@ -309,57 +382,107 @@ export default function NotasSessoesTab() {
       </Modal>
 
       {/* Modal de criar/editar nota */}
-      <Modal visible={showModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+      <Modal 
+        visible={showModal} 
+        transparent 
+        animationType="slide"
+        onRequestClose={fecharModal}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <Pressable 
+            style={StyleSheet.absoluteFill}
+            onPress={fecharModal}
+          />
+          <Pressable 
+            onPress={() => {}}
+            style={styles.modalContent}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{editandoNota ? 'Editar Nota' : 'Nova Nota'}</Text>
-              <TouchableOpacity onPress={fecharModal}>
+              <TouchableOpacity 
+                onPress={() => {
+                  console.log('🔴 BOTÃO FECHAR CLICADO');
+                  fecharModal();
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
                 <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
             
-            <Text style={styles.label}>Título</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: Sessão de avaliação inicial"
-              value={titulo}
-              onChangeText={setTitulo}
-            />
-            
-            <Text style={styles.label}>Conteúdo</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Anotações sobre a sessão..."
-              value={conteudo}
-              onChangeText={setConteudo}
-              multiline
-              numberOfLines={8}
-              textAlignVertical="top"
-            />
+            <ScrollView 
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.label}>Título</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ex: Sessão de avaliação inicial"
+                value={titulo}
+                onChangeText={(text) => {
+                  console.log('📝 Título alterado:', text);
+                  setTitulo(text);
+                }}
+                editable={!salvando}
+              />
+              
+              <Text style={styles.label}>Conteúdo</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Anotações sobre a sessão..."
+                value={conteudo}
+                onChangeText={(text) => {
+                  console.log('📝 Conteúdo alterado, length:', text.length);
+                  setConteudo(text);
+                }}
+                multiline
+                numberOfLines={8}
+                textAlignVertical="top"
+                editable={!salvando}
+              />
+            </ScrollView>
             
             <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={fecharModal}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]} 
+                onPress={fecharModal}
+                disabled={salvando}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton, salvando && styles.buttonDisabled]}
+                style={[
+                  styles.modalButton, 
+                  styles.saveButton, 
+                  salvando && styles.buttonDisabled
+                ]}
                 onPress={salvarNota}
                 disabled={salvando}
+                activeOpacity={salvando ? 1 : 0.7}
               >
                 {salvando ? (
-                  <ActivityIndicator color={Colors.card} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                    <ActivityIndicator color={Colors.card} size="small" />
+                    <Text style={[styles.saveButtonText, { marginLeft: 8 }]}>Salvando...</Text>
+                  </View>
                 ) : (
                   <Text style={styles.saveButtonText}>Salvar</Text>
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </ScrollView>
   );
 }
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isSmallScreen = SCREEN_WIDTH < 360;
 
 const styles = StyleSheet.create({
   container: {
@@ -367,7 +490,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   scrollContent: {
-    padding: 24,
+    padding: isSmallScreen ? 16 : 24,
     paddingBottom: 100,
   },
   headerActions: {
@@ -390,7 +513,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: isSmallScreen ? 16 : 18,
     fontWeight: '700',
     color: Colors.text,
     marginTop: 16,

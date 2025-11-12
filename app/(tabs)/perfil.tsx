@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
@@ -110,23 +110,13 @@ export default function Perfil() {
             </View>
           </View>
         </Modal>
-        {/* Botão de logout direto para teste */}
-        <TouchableOpacity style={[styles.listItem, { backgroundColor: Colors.cardAlt }]} onPress={async () => {
-          await signOut();
-          router.replace('/login');
-          setTimeout(() => {
-            if (typeof window !== 'undefined') {
-              window.location.reload();
-            }
-          }, 100);
-        }}>
-          <Ionicons name="exit-outline" size={24} color={Colors.destructive} />
-          <Text style={[styles.listItemText, { color: Colors.destructive }]}>Logout Direto (Teste)</Text>
-        </TouchableOpacity>
       </View>
     </ScrollView>
   );
 }
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const isSmallScreen = SCREEN_WIDTH < 360;
 
 const styles = StyleSheet.create({
   container: {
@@ -140,29 +130,29 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     backgroundColor: Colors.card,
-    paddingVertical: 30,
+    paddingVertical: isSmallScreen ? 20 : 30,
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
   userName: {
-    fontSize: 24,
+    fontSize: isSmallScreen ? 20 : 24,
     fontWeight: 'bold',
     color: Colors.text,
     marginTop: 10,
   },
   userEmail: {
-    fontSize: 16,
+    fontSize: isSmallScreen ? 14 : 16,
     color: Colors.icon,
     marginTop: 5,
   },
   menuContainer: {
-    marginTop: 30,
+    marginTop: isSmallScreen ? 20 : 30,
   },
   listItem: {
     backgroundColor: Colors.card,
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingHorizontal: isSmallScreen ? 16 : 20,
+    paddingVertical: isSmallScreen ? 12 : 15,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
@@ -171,7 +161,7 @@ const styles = StyleSheet.create({
   listItemText: {
     flex: 1,
     marginLeft: 15,
-    fontSize: 16,
+    fontSize: isSmallScreen ? 14 : 16,
     color: Colors.text,
   },
 });

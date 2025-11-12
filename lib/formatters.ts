@@ -76,3 +76,13 @@ export const validarDataFormatada = (data: string): boolean => {
 
 
 
+
+
+
+
+
+
+
+
+
+

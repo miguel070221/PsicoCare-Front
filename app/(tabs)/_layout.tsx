@@ -161,19 +161,8 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="horarios-disponiveis"
-        options={{
-          href: role !== 'psicologo' ? null : undefined,
-          title: 'Horários',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="time-outline" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="agendamentos"
         options={{
-          href: role === 'psicologo' ? null : undefined,
           title: 'Agendamentos',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="calendar-outline" color={color} size={size} />

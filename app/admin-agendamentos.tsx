@@ -7,19 +7,29 @@ import AppHeader from '../components/AppHeader';
 import { Ionicons } from '@expo/vector-icons';
 import { getAgendamentosUsuario, criarAgendamento, atualizarAgendamento, listarUsuariosCompleto, deletarAgendamento } from '../lib/api';
 import EmptyState from '../components/EmptyState';
+import { 
+  getResponsivePadding, 
+  getResponsiveFontSize, 
+  getResponsiveGap,
+  getResponsiveWidth,
+  isSmallScreen,
+  isXLargeScreen 
+} from '../utils/responsive';
 
 export default function AdminAgendamentos() {
   const { token } = useAuth();
   const [agendamentos, setAgendamentos] = useState<any[]>([]);
   const [agendamentosFiltrados, setAgendamentosFiltrados] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cancelandoId, setCancelandoId] = useState<number | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalEditVisible, setModalEditVisible] = useState(false);
+  const [modalCancelarVisible, setModalCancelarVisible] = useState(false);
   const [agendamentoEditando, setAgendamentoEditando] = useState<any>(null);
+  const [agendamentoCancelando, setAgendamentoCancelando] = useState<any>(null);
   
   // Estados de filtros e busca
   const [busca, setBusca] = useState<string>('');
-  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'agendado' | 'cancelado'>('todos');
   const [filtroPsicologo, setFiltroPsicologo] = useState<string>('');
   const [filtroPaciente, setFiltroPaciente] = useState<string>('');
   const [filtroData, setFiltroData] = useState<string>('');
@@ -88,19 +98,6 @@ export default function AdminAgendamentos() {
       );
     }
 
-    // Filtro por status
-    if (filtroStatus !== 'todos') {
-      filtrados = filtrados.filter(ag => {
-        const status = ag.status?.toLowerCase() || 'agendado';
-        if (filtroStatus === 'agendado') {
-          return status === 'agendado' || !ag.status;
-        } else if (filtroStatus === 'cancelado') {
-          return status === 'cancelado';
-        }
-        return true;
-      });
-    }
-
     // Filtro por psicólogo
     if (filtroPsicologo) {
       filtrados = filtrados.filter(ag => 
@@ -140,7 +137,7 @@ export default function AdminAgendamentos() {
     }
 
     setAgendamentosFiltrados(filtrados);
-  }, [agendamentos, busca, filtroStatus, filtroPsicologo, filtroPaciente, filtroData]);
+  }, [agendamentos, busca, filtroPsicologo, filtroPaciente, filtroData]);
 
   const abrirModalCriar = () => {
     setPsicologoId('');
@@ -245,30 +242,70 @@ export default function AdminAgendamentos() {
   };
 
   const handleCancelarAgendamento = (ag: any) => {
-    Alert.alert(
-      'Cancelar Agendamento',
-      `Tem certeza que deseja cancelar o agendamento de ${ag.paciente_nome || 'paciente'} com ${ag.psicologo_nome || 'psicólogo'} em ${ag.data} às ${ag.horario}?`,
-      [
-        {
-          text: 'Não',
-          style: 'cancel'
-        },
-        {
-          text: 'Sim, cancelar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deletarAgendamento(ag.id, token!);
-              Alert.alert('Sucesso', 'Agendamento cancelado com sucesso!');
-              carregarAgendamentos();
-            } catch (error: any) {
-              console.error('Erro ao cancelar agendamento:', error);
-              Alert.alert('Erro', error?.response?.data?.erro || 'Não foi possível cancelar o agendamento.');
-            }
-          }
-        }
-      ]
-    );
+    console.log('🔴 handleCancelarAgendamento chamado com:', ag);
+    console.log('🔴 Token presente:', !!token);
+    console.log('🔴 ID do agendamento:', ag.id);
+    
+    setAgendamentoCancelando(ag);
+    setModalCancelarVisible(true);
+  };
+
+  const confirmarCancelamento = async () => {
+    if (!agendamentoCancelando) return;
+    
+    const ag = agendamentoCancelando;
+    console.log('✅ Usuário confirmou o cancelamento');
+    
+    if (!token) {
+      console.error('❌ Token não encontrado');
+      Alert.alert('Erro', 'Você precisa estar autenticado.');
+      setModalCancelarVisible(false);
+      setAgendamentoCancelando(null);
+      return;
+    }
+
+    if (!ag.id) {
+      console.error('❌ ID do agendamento não encontrado');
+      Alert.alert('Erro', 'ID do agendamento não encontrado.');
+      setModalCancelarVisible(false);
+      setAgendamentoCancelando(null);
+      return;
+    }
+
+    setCancelandoId(ag.id);
+    try {
+      console.log('🗑️ Tentando deletar agendamento:', ag.id);
+      console.log('🗑️ Token (primeiros 20 chars):', token.substring(0, 20) + '...');
+      
+      const resultado = await deletarAgendamento(ag.id, token);
+      console.log('✅ Agendamento deletado com sucesso:', resultado);
+      
+      // Recarregar a lista imediatamente
+      console.log('🔄 Recarregando lista de agendamentos...');
+      await carregarAgendamentos();
+      console.log('✅ Lista recarregada');
+      
+      setModalCancelarVisible(false);
+      setAgendamentoCancelando(null);
+      Alert.alert('Sucesso', 'Agendamento cancelado com sucesso!');
+    } catch (error: any) {
+      console.error('❌ Erro ao cancelar agendamento:', error);
+      console.error('❌ Erro completo:', JSON.stringify(error, null, 2));
+      console.error('❌ Status:', error?.response?.status);
+      console.error('❌ Dados do erro:', error?.response?.data);
+      
+      const mensagemErro = error?.response?.data?.erro || error?.message || 'Não foi possível cancelar o agendamento.';
+      Alert.alert('Erro', mensagemErro);
+    } finally {
+      setCancelandoId(null);
+      console.log('🏁 Processo de cancelamento finalizado');
+    }
+  };
+
+  const cancelarCancelamento = () => {
+    console.log('❌ Usuário cancelou a confirmação');
+    setModalCancelarVisible(false);
+    setAgendamentoCancelando(null);
   };
 
   return (
@@ -298,33 +335,6 @@ export default function AdminAgendamentos() {
               <Ionicons name="close-circle" size={20} color={Colors.textSecondary} />
             </TouchableOpacity>
           )}
-        </View>
-
-        <View style={styles.filtrosRow}>
-          <TouchableOpacity
-            style={[styles.filtroButton, filtroStatus === 'todos' && styles.filtroButtonAtivo]}
-            onPress={() => setFiltroStatus('todos')}
-          >
-            <Text style={[styles.filtroButtonText, filtroStatus === 'todos' && styles.filtroButtonTextAtivo]}>
-              Todos
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filtroButton, filtroStatus === 'agendado' && styles.filtroButtonAtivo]}
-            onPress={() => setFiltroStatus('agendado')}
-          >
-            <Text style={[styles.filtroButtonText, filtroStatus === 'agendado' && styles.filtroButtonTextAtivo]}>
-              Agendados
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filtroButton, filtroStatus === 'cancelado' && styles.filtroButtonAtivo]}
-            onPress={() => setFiltroStatus('cancelado')}
-          >
-            <Text style={[styles.filtroButtonText, filtroStatus === 'cancelado' && styles.filtroButtonTextAtivo]}>
-              Cancelados
-            </Text>
-          </TouchableOpacity>
         </View>
 
         <View style={styles.filtrosRow}>
@@ -405,7 +415,7 @@ export default function AdminAgendamentos() {
           <EmptyState 
             icon="📅" 
             title="Nenhum agendamento encontrado" 
-            hint={busca || filtroStatus !== 'todos' || filtroPsicologo || filtroPaciente || filtroData ? "Tente ajustar os filtros" : "Clique em 'Novo Agendamento' para criar um"} 
+            hint={busca || filtroPsicologo || filtroPaciente || filtroData ? "Tente ajustar os filtros" : "Clique em 'Novo Agendamento' para criar um"} 
           />
         ) : (
           agendamentosFiltrados.map((ag, idx) => {
@@ -413,7 +423,11 @@ export default function AdminAgendamentos() {
             const isAgendado = ag.status === 'agendado' || ag.status === 'Agendado' || !ag.status;
             
             return (
-              <View style={[styles.card, isCancelado && styles.cardCancelado]} key={ag.id || idx}>
+              <View 
+                style={[styles.card, isCancelado && styles.cardCancelado]} 
+                key={ag.id || idx}
+                pointerEvents="box-none"
+              >
                 <View style={styles.cardHeader}>
                   <View style={styles.cardDateContainer}>
                     <Ionicons name="calendar-outline" size={20} color={Colors.tint} />
@@ -439,8 +453,8 @@ export default function AdminAgendamentos() {
                   </View>
                 )}
                 
-                <View style={styles.cardActions}>
-                  <View style={styles.statusContainer}>
+                <View style={styles.cardActions} pointerEvents="box-none">
+                  <View style={styles.statusContainer} pointerEvents="none">
                     <View style={[
                       styles.statusBadge,
                       isAgendado && styles.statusBadgeAgendado,
@@ -456,11 +470,15 @@ export default function AdminAgendamentos() {
                     </View>
                   </View>
                   
-                  <View style={styles.cardActionsButtons}>
+                  <View style={styles.cardActionsButtons} pointerEvents="box-none">
                     {!isCancelado && (
                       <TouchableOpacity
                         style={styles.buttonEditar}
-                        onPress={() => abrirModalEditar(ag)}
+                        onPress={() => {
+                          console.log('✏️ Botão Editar clicado!', ag.id);
+                          abrirModalEditar(ag);
+                        }}
+                        activeOpacity={0.7}
                       >
                         <Ionicons name="create-outline" size={18} color={Colors.card} />
                         <Text style={styles.buttonEditarText}>Editar</Text>
@@ -469,11 +487,23 @@ export default function AdminAgendamentos() {
                     
                     {!isCancelado && (
                       <TouchableOpacity
-                        style={styles.buttonCancelar}
-                        onPress={() => handleCancelarAgendamento(ag)}
+                        style={[styles.buttonCancelar, cancelandoId === ag.id && styles.buttonCancelarDisabled]}
+                        onPress={() => {
+                          console.log('🔴 Botão Cancelar clicado! ID:', ag.id);
+                          handleCancelarAgendamento(ag);
+                        }}
+                        disabled={cancelandoId === ag.id}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       >
-                        <Ionicons name="close-circle-outline" size={18} color={Colors.card} />
-                        <Text style={styles.buttonCancelarText}>Cancelar</Text>
+                        {cancelandoId === ag.id ? (
+                          <ActivityIndicator size="small" color={Colors.card} />
+                        ) : (
+                          <>
+                            <Ionicons name="close-circle-outline" size={18} color={Colors.card} />
+                            <Text style={styles.buttonCancelarText}>Cancelar</Text>
+                          </>
+                        )}
                       </TouchableOpacity>
                     )}
                   </View>
@@ -654,6 +684,56 @@ export default function AdminAgendamentos() {
           </View>
         </View>
       </Modal>
+
+      {/* Modal de Confirmação de Cancelamento */}
+      <Modal
+        visible={modalCancelarVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={cancelarCancelamento}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalConfirmContent}>
+            <View style={styles.modalConfirmHeader}>
+              <Ionicons name="warning-outline" size={32} color={Colors.destructive} />
+              <Text style={styles.modalConfirmTitle}>Cancelar Agendamento</Text>
+            </View>
+            
+            <Text style={styles.modalConfirmText}>
+              Tem certeza que deseja cancelar o agendamento de{' '}
+              <Text style={styles.modalConfirmBold}>
+                {agendamentoCancelando?.paciente_nome || 'paciente'}
+              </Text>{' '}
+              com{' '}
+              <Text style={styles.modalConfirmBold}>
+                {agendamentoCancelando?.psicologo_nome || 'psicólogo'}
+              </Text>{' '}
+              em <Text style={styles.modalConfirmBold}>{agendamentoCancelando?.data}</Text> às{' '}
+              <Text style={styles.modalConfirmBold}>{agendamentoCancelando?.horario}</Text>?
+            </Text>
+            
+            <View style={styles.modalConfirmFooter}>
+              <TouchableOpacity
+                style={[styles.modalConfirmButton, styles.modalConfirmButtonCancel]}
+                onPress={cancelarCancelamento}
+              >
+                <Text style={styles.modalConfirmButtonTextCancel}>Não</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmButton, styles.modalConfirmButtonConfirm]}
+                onPress={confirmarCancelamento}
+                disabled={cancelandoId === agendamentoCancelando?.id}
+              >
+                {cancelandoId === agendamentoCancelando?.id ? (
+                  <ActivityIndicator size="small" color={Colors.card} />
+                ) : (
+                  <Text style={styles.modalConfirmButtonTextConfirm}>Sim, cancelar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -664,46 +744,52 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   headerActions: {
-    padding: 16,
+    padding: getResponsivePadding(16),
     backgroundColor: Colors.card,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
   buttonCriar: {
     backgroundColor: Colors.tint,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingVertical: getResponsivePadding(12),
+    paddingHorizontal: getResponsivePadding(20),
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: getResponsiveGap(8),
+    minHeight: isSmallScreen ? 44 : 48,
   },
   buttonCriarText: {
     color: Colors.card,
     fontWeight: '600',
-    fontSize: 16,
+    fontSize: getResponsiveFontSize(16),
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
+    padding: getResponsivePadding(16),
+    paddingBottom: isSmallScreen ? 120 : 150,
+    flexGrow: 1,
   },
   loader: {
     marginTop: 40,
   },
   card: {
-    padding: 16,
+    padding: getResponsivePadding(16),
     borderRadius: 12,
     backgroundColor: Colors.card,
-    marginBottom: 12,
+    marginBottom: getResponsiveGap(12),
     borderColor: Colors.border,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOpacity: 0.04,
     shadowRadius: 4,
     elevation: 1,
+    width: '100%',
+    minHeight: isSmallScreen ? 180 : 160,
+    overflow: 'visible',
   },
   cardCancelado: {
     opacity: 0.7,
@@ -711,13 +797,14 @@ const styles = StyleSheet.create({
     borderLeftColor: Colors.destructive,
   },
   cardHeader: {
-    flexDirection: 'row',
+    flexDirection: isSmallScreen ? 'column' : 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 12,
+    alignItems: isSmallScreen ? 'flex-start' : 'center',
+    marginBottom: getResponsiveGap(12),
+    paddingBottom: getResponsiveGap(12),
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+    gap: isSmallScreen ? getResponsiveGap(8) : 0,
   },
   cardDateContainer: {
     flexDirection: 'row',
@@ -730,12 +817,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   date: {
-    fontSize: 18,
+    fontSize: getResponsiveFontSize(isSmallScreen ? 16 : 18),
     fontWeight: '600',
     color: Colors.text,
+    flexShrink: 1,
   },
   horario: {
-    fontSize: 16,
+    fontSize: getResponsiveFontSize(isSmallScreen ? 14 : 16),
     fontWeight: '500',
     color: Colors.headerBlue,
   },
@@ -751,20 +839,27 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   cardActions: {
-    flexDirection: 'row',
+    flexDirection: isSmallScreen ? 'column' : 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 12,
+    alignItems: isSmallScreen ? 'stretch' : 'center',
+    marginTop: getResponsiveGap(12),
+    paddingTop: getResponsiveGap(12),
     borderTopWidth: 1,
     borderTopColor: Colors.border,
+    gap: isSmallScreen ? getResponsiveGap(8) : 0,
   },
   cardActionsButtons: {
-    flexDirection: 'row',
-    gap: 8,
+    flexDirection: isSmallScreen ? 'column' : 'row',
+    gap: getResponsiveGap(8),
+    zIndex: 10,
+    position: 'relative',
+    width: isSmallScreen ? '100%' : 'auto',
+    flex: isSmallScreen ? 0 : 1,
   },
   statusContainer: {
-    flex: 1,
+    flex: isSmallScreen ? 0 : 1,
+    marginBottom: isSmallScreen ? getResponsiveGap(8) : 0,
+    width: isSmallScreen ? '100%' : 'auto',
   },
   statusBadge: {
     paddingHorizontal: 12,
@@ -791,44 +886,59 @@ const styles = StyleSheet.create({
   },
   buttonEditar: {
     backgroundColor: Colors.tint,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: getResponsivePadding(8),
+    paddingHorizontal: getResponsivePadding(16),
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: getResponsiveGap(6),
+    width: isSmallScreen ? '100%' : 'auto',
+    justifyContent: 'center',
+    minHeight: 40,
   },
   buttonEditarText: {
     color: Colors.card,
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
   },
   buttonCancelar: {
     backgroundColor: Colors.destructive,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: getResponsivePadding(8),
+    paddingHorizontal: getResponsivePadding(16),
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: getResponsiveGap(6),
+    zIndex: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    width: isSmallScreen ? '100%' : 'auto',
+    justifyContent: 'center',
+    minHeight: 40,
   },
   buttonCancelarText: {
     color: Colors.card,
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
+  },
+  buttonCancelarDisabled: {
+    opacity: 0.6,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: getResponsivePadding(20),
   },
   modalContent: {
     backgroundColor: Colors.card,
     borderRadius: 16,
-    width: '100%',
-    maxWidth: 500,
+    width: isSmallScreen ? '95%' : '100%',
+    maxWidth: isXLargeScreen ? 600 : 500,
     maxHeight: '90%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -840,32 +950,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: getResponsivePadding(20),
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: getResponsiveFontSize(isSmallScreen ? 18 : 20),
     fontWeight: '600',
     color: Colors.text,
+    flexShrink: 1,
   },
   modalBody: {
-    padding: 20,
-    maxHeight: 400,
+    padding: getResponsivePadding(20),
+    maxHeight: isSmallScreen ? '70%' : '80%',
+    minHeight: isSmallScreen ? 200 : 250,
   },
   modalFooter: {
     flexDirection: 'row',
-    gap: 12,
-    padding: 20,
+    gap: getResponsiveGap(12),
+    padding: getResponsivePadding(20),
     borderTopWidth: 1,
     borderTopColor: Colors.border,
   },
   modalButton: {
     flex: 1,
-    padding: 14,
+    padding: getResponsivePadding(14),
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 48,
   },
   modalButtonSecondary: {
     backgroundColor: Colors.border,
@@ -879,29 +992,31 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   formGroup: {
-    marginBottom: 20,
+    marginBottom: getResponsiveGap(20),
   },
   formLabel: {
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
     fontWeight: '600',
     color: Colors.text,
-    marginBottom: 8,
+    marginBottom: getResponsiveGap(8),
   },
   formInput: {
     backgroundColor: Colors.background,
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    padding: getResponsivePadding(12),
+    fontSize: getResponsiveFontSize(16),
     color: Colors.text,
+    minHeight: isSmallScreen ? 44 : 48,
   },
   selectContainer: {
-    maxHeight: 150,
+    maxHeight: isSmallScreen ? 120 : 150,
     backgroundColor: Colors.background,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: Colors.border,
+    minHeight: 80,
   },
   selectOption: {
     padding: 12,
@@ -929,7 +1044,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   filtrosContainer: {
-    padding: 16,
+    padding: getResponsivePadding(16),
     backgroundColor: Colors.card,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
@@ -949,36 +1064,41 @@ const styles = StyleSheet.create({
   },
   buscaInput: {
     flex: 1,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingVertical: getResponsivePadding(10),
+    fontSize: getResponsiveFontSize(14),
     color: Colors.text,
+    minHeight: isSmallScreen ? 40 : 44,
   },
   buscaClear: {
     padding: 4,
   },
   filtrosRow: {
     flexDirection: 'row',
-    marginBottom: 12,
-    gap: 8,
+    marginBottom: getResponsiveGap(12),
+    gap: getResponsiveGap(8),
+    flexWrap: isSmallScreen ? 'wrap' : 'nowrap',
   },
   filtroButton: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    flex: isSmallScreen ? 1 : 1,
+    paddingVertical: getResponsivePadding(8),
+    paddingHorizontal: getResponsivePadding(12),
     borderRadius: 8,
     backgroundColor: Colors.background,
     borderWidth: 1,
     borderColor: Colors.border,
     alignItems: 'center',
+    minWidth: isSmallScreen ? '48%' : undefined,
+    minHeight: 40,
   },
   filtroButtonAtivo: {
     backgroundColor: Colors.tint,
     borderColor: Colors.tint,
   },
   filtroButtonText: {
-    fontSize: 12,
+    fontSize: getResponsiveFontSize(isSmallScreen ? 11 : 12),
     color: Colors.text,
     fontWeight: '500',
+    textAlign: 'center',
   },
   filtroButtonTextAtivo: {
     color: Colors.card,
@@ -1028,9 +1148,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 8,
-    padding: 10,
-    fontSize: 14,
+    padding: getResponsivePadding(10),
+    fontSize: getResponsiveFontSize(14),
     color: Colors.text,
+    minHeight: isSmallScreen ? 40 : 44,
   },
   filtroDataClear: {
     padding: 4,
@@ -1053,5 +1174,66 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 14,
     color: Colors.text,
+  },
+  modalConfirmContent: {
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    width: isSmallScreen ? '95%' : '90%',
+    maxWidth: 400,
+    padding: getResponsivePadding(24),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalConfirmHeader: {
+    alignItems: 'center',
+    marginBottom: getResponsiveGap(20),
+  },
+  modalConfirmTitle: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 18 : 20),
+    fontWeight: '700',
+    color: Colors.text,
+    marginTop: getResponsiveGap(12),
+  },
+  modalConfirmText: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 14 : 16),
+    color: Colors.text,
+    textAlign: 'center',
+    marginBottom: getResponsiveGap(24),
+    lineHeight: isSmallScreen ? 20 : 24,
+  },
+  modalConfirmBold: {
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  modalConfirmFooter: {
+    flexDirection: 'row',
+    gap: getResponsiveGap(12),
+  },
+  modalConfirmButton: {
+    flex: 1,
+    padding: getResponsivePadding(14),
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  modalConfirmButtonCancel: {
+    backgroundColor: Colors.border,
+  },
+  modalConfirmButtonConfirm: {
+    backgroundColor: Colors.destructive,
+  },
+  modalConfirmButtonTextCancel: {
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  modalConfirmButtonTextConfirm: {
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: '600',
+    color: Colors.card,
   },
 });

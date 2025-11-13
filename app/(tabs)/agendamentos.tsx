@@ -1341,7 +1341,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: isSmallScreen ? 16 : 24,
-    paddingBottom: 100,
+    paddingBottom: isSmallScreen ? 120 : 150,
+    flexGrow: 1,
   },
   title: {
     fontSize: isSmallScreen ? 18 : 20,

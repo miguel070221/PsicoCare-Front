@@ -346,7 +346,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: isSmallScreen ? 16 : 20,
-    paddingBottom: 40,
+    paddingBottom: isSmallScreen ? 120 : 150,
+    flexGrow: 1,
   },
   loadingContainer: {
     flex: 1,

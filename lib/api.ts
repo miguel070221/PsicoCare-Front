@@ -223,7 +223,8 @@ export const excluirPsicologoAdmin = async (psicologoId: number, token: string):
 export const deletarAgendamento = async (agendamentoId: number, token: string): Promise<any> => {
   console.log('📤 deletarAgendamento chamado:', { agendamentoId, tokenPresente: !!token });
   try {
-    const resultado = await apiFetch(`/agendamentos/${agendamentoId}`, 'DELETE', {}, token);
+    // DELETE não precisa de body
+    const resultado = await apiFetch(`/agendamentos/${agendamentoId}`, 'DELETE', undefined, token);
     console.log('✅ Agendamento deletado com sucesso:', resultado);
     return resultado;
   } catch (error: any) {

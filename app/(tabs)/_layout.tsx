@@ -4,6 +4,13 @@ import { useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
+import { 
+  getResponsivePadding, 
+  getResponsiveFontSize,
+  getResponsiveWidth,
+  isSmallScreen,
+  SCREEN_DIMENSIONS 
+} from '../../utils/responsive';
 
 export default function TabLayout() {
   const { user, isLoading } = useAuth();
@@ -35,27 +42,31 @@ export default function TabLayout() {
         // Estilo flutuante com fundo branco e borda em azul pastel
         tabBarStyle: {
           position: 'absolute',
-          bottom: 20,
-          left: 16,
-          right: 16,
+          bottom: isSmallScreen ? 10 : 20,
+          left: isSmallScreen ? 8 : 16,
+          right: isSmallScreen ? 8 : 16,
           elevation: 5,
           backgroundColor: Colors.background,
           borderRadius: 14,
-          height: 62,
+          height: isSmallScreen ? 58 : 62,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.12,
           shadowRadius: 4,
           borderWidth: 1,
           borderColor: Colors.border,
+          paddingHorizontal: isSmallScreen ? 4 : 8,
         },
         // Cores dos ícones e texto
         tabBarActiveTintColor: Colors.headerBlue,
         tabBarInactiveTintColor: Colors.icon,
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: getResponsiveFontSize(isSmallScreen ? 10 : 12),
           fontWeight: '600',
           marginBottom: 4,
+        },
+        tabBarIconStyle: {
+          marginTop: 4,
         },
       }}
     >
@@ -147,16 +158,6 @@ export default function TabLayout() {
           title: 'Notas',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="create-outline" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="relatorios-estatisticas"
-        options={{
-          href: role !== 'psicologo' ? null : undefined,
-          title: 'Relatórios',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="stats-chart-outline" color={color} size={size} />
           ),
         }}
       />

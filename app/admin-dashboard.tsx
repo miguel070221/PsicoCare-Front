@@ -5,6 +5,14 @@ import Colors from '../constants/Colors';
 import { useAuth } from './contexts/AuthContext';
 import AppHeader from '../components/AppHeader';
 import { Ionicons } from '@expo/vector-icons';
+import { 
+  getResponsivePadding, 
+  getResponsiveFontSize, 
+  getResponsiveGap,
+  getResponsiveWidth,
+  isSmallScreen,
+  isXLargeScreen 
+} from '../utils/responsive';
 
 export default function AdminDashboard() {
   const { user, signOut } = useAuth();
@@ -62,17 +70,8 @@ export default function AdminDashboard() {
   const handleGerenciarUsuarios = () => {
     router.push('/admin-usuarios');
   };
-  const handleGerenciarProfissionais = () => {
-    router.push('/admin-usuarios');
-  };
   const handleVerAgendamentos = () => {
     router.push('/admin-agendamentos');
-  };
-  const handleVerAcompanhamentos = () => {
-    // Navegar ou abrir modal de acompanhamentos
-  };
-  const handleVerAvaliacoes = () => {
-    // Navegar ou abrir modal de avaliações
   };
 
   return (
@@ -92,17 +91,8 @@ export default function AdminDashboard() {
         <TouchableOpacity style={styles.button} onPress={handleGerenciarUsuarios}>
           <Text style={styles.buttonText}>Gerenciar Usuários</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={handleGerenciarProfissionais}>
-          <Text style={styles.buttonText}>Gerenciar Psicólogos</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={styles.button} onPress={handleVerAgendamentos}>
           <Text style={styles.buttonText}>Ver Agendamentos</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={handleVerAcompanhamentos}>
-          <Text style={styles.buttonText}>Ver Acompanhamentos</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={handleVerAvaliacoes}>
-          <Text style={styles.buttonText}>Ver Avaliações</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.button, styles.logoutButtonLarge]} 
@@ -156,13 +146,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   content: {
-    padding: 24,
+    padding: getResponsivePadding(24),
     alignItems: 'center',
+    paddingBottom: isSmallScreen ? 100 : 120,
+    flexGrow: 1,
   },
   headerContainer: {
     width: '100%',
     position: 'relative',
-    marginBottom: 8,
+    marginBottom: getResponsiveGap(8),
   },
   logoutButton: {
     position: 'absolute',
@@ -170,102 +162,113 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    gap: getResponsiveGap(6),
+    paddingVertical: getResponsivePadding(8),
+    paddingHorizontal: getResponsivePadding(12),
     borderRadius: 8,
     backgroundColor: Colors.card,
     borderWidth: 1,
     borderColor: Colors.destructive,
+    maxWidth: isSmallScreen ? getResponsiveWidth(35) : undefined,
   },
   logoutButtonText: {
     color: Colors.destructive,
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: getResponsiveFontSize(14),
   },
   section: {
     width: '100%',
     alignItems: 'center',
+    maxWidth: isXLargeScreen ? 600 : '100%',
+    alignSelf: 'center',
   },
   button: {
     backgroundColor: Colors.tint,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
+    paddingVertical: getResponsivePadding(16),
+    paddingHorizontal: getResponsivePadding(32),
     borderRadius: 12,
-    marginBottom: 18,
-    width: '90%',
+    marginBottom: getResponsiveGap(18),
+    width: isSmallScreen ? '95%' : isXLargeScreen ? '85%' : '90%',
     alignItems: 'center',
     shadowColor: Colors.tint,
     shadowOpacity: 0.08,
     shadowRadius: 6,
     elevation: 2,
+    minHeight: isSmallScreen ? 50 : 56,
+    justifyContent: 'center',
   },
   buttonText: {
     color: Colors.card,
     fontWeight: 'bold',
-    fontSize: 18,
+    fontSize: getResponsiveFontSize(18),
+    textAlign: 'center',
   },
   logoutButtonLarge: {
     backgroundColor: Colors.destructive,
-    marginTop: 8,
+    marginTop: getResponsiveGap(8),
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: getResponsivePadding(16),
   },
   modalContent: {
     backgroundColor: Colors.card,
     borderRadius: 12,
-    padding: 24,
-    width: '85%',
+    padding: getResponsivePadding(24),
+    width: isSmallScreen ? '95%' : '85%',
     maxWidth: 400,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: getResponsiveFontSize(20),
     fontWeight: '700',
-    marginBottom: 12,
+    marginBottom: getResponsiveGap(12),
     color: Colors.text,
   },
   modalMessage: {
-    fontSize: 15,
+    fontSize: getResponsiveFontSize(15),
     color: Colors.textSecondary,
-    marginBottom: 24,
+    marginBottom: getResponsiveGap(24),
     textAlign: 'center',
   },
   modalButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: getResponsiveGap(12),
     width: '100%',
   },
   modalButtonCancel: {
     flex: 1,
-    padding: 14,
+    padding: getResponsivePadding(14),
     borderRadius: 8,
     backgroundColor: Colors.cardAlt,
     borderWidth: 1,
     borderColor: Colors.border,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   modalButtonCancelText: {
     color: Colors.text,
     fontWeight: '600',
-    fontSize: 16,
+    fontSize: getResponsiveFontSize(16),
   },
   modalButtonConfirm: {
     flex: 1,
-    padding: 14,
+    padding: getResponsivePadding(14),
     borderRadius: 8,
     backgroundColor: Colors.destructive,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   modalButtonConfirmText: {
     color: Colors.card,
     fontWeight: '600',
-    fontSize: 16,
+    fontSize: getResponsiveFontSize(16),
   },
 });

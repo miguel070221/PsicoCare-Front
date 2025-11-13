@@ -7,6 +7,7 @@ import EmptyState from '../../components/EmptyState';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 import { criarAcompanhamento, getAcompanhamentos } from '../../lib/api';
+import { isSmallScreen, getResponsivePadding, getResponsiveFontSize } from '../../utils/responsive';
 
 export default function AcompanhamentoDiario() {
   const { token } = useAuth();
@@ -111,7 +112,7 @@ export default function AcompanhamentoDiario() {
               activeOpacity={0.8}
             >
               <Text style={styles.moodEmoji}>{h.emoji}</Text>
-              <Text style={styles.optionText}>
+              <Text style={[styles.optionText, { fontSize: isSmallScreen ? 10 : 12 }]} numberOfLines={1} ellipsizeMode="tail">
                 {h.value === 'Outro' && outrasEmocoes.length > 0 ? outrasEmocoes.join(', ') : h.label}
               </Text>
             </TouchableOpacity>
@@ -193,7 +194,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.lightGray,
-    padding: 20,
   },
   card: {
     padding: 14,
@@ -204,20 +204,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   moodEmoji: {
-    fontSize: 36,
+    fontSize: isSmallScreen ? 28 : 36,
     marginBottom: 4,
     textAlign: 'center',
   },
   moodOption: {
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 14,
+    paddingVertical: isSmallScreen ? 10 : 12,
+    paddingHorizontal: isSmallScreen ? 8 : 10,
     borderRadius: 16,
     borderWidth: 2,
     borderColor: Colors.border,
     backgroundColor: Colors.cardAlt,
-    marginHorizontal: 6,
-    minWidth: 80,
+    minWidth: isSmallScreen ? 65 : 70,
+    maxWidth: isSmallScreen ? 80 : 90,
+    flex: 1,
+    flexBasis: isSmallScreen ? '19%' : '18%',
     shadowColor: Colors.tint,
     shadowOpacity: 0.08,
     shadowRadius: 6,
@@ -278,8 +280,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.tintDark,
   },
   scrollContent: {
-    padding: 24,
-    paddingBottom: 100,
+    padding: getResponsivePadding(20),
+    paddingBottom: isSmallScreen ? 120 : 150,
+    paddingHorizontal: getResponsivePadding(16),
+    flexGrow: 1,
   },
   title: {
     fontSize: 28,
@@ -295,15 +299,18 @@ const styles = StyleSheet.create({
     marginBottom: 25,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: getResponsiveFontSize(isSmallScreen ? 16 : 18),
     fontWeight: 'bold',
     color: Colors.text,
     marginBottom: 15,
   },
   optionsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'flex-start',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 4,
   },
   emoji: {
     fontSize: 30,
@@ -311,6 +318,8 @@ const styles = StyleSheet.create({
   optionText: {
     marginTop: 5,
     color: Colors.text,
+    textAlign: 'center',
+    fontSize: isSmallScreen ? 10 : 12,
   },
   textArea: {
     backgroundColor: Colors.background,

@@ -181,7 +181,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 24,
-    paddingBottom: 100,
+    paddingBottom: 150,
+    flexGrow: 1,
   },
   sectionTitle: {
     fontSize: 18,
@@ -305,6 +306,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 });
+
 
 
 

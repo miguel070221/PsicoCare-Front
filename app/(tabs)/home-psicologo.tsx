@@ -1,33 +1,37 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, TextInput, Alert, ActivityIndicator } from 'react-native';
-// Removido DateTimePicker: mini calendário sem dependências
+import { View, Text, StyleSheet, ScrollView, Switch, ActivityIndicator } from 'react-native';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
-import { toggleDisponibilidade, listarAtendimentosDoPsicologo, criarAgendamento, getSlotsDisponiveis, getPsicologoMe } from '../../lib/api';
-import { formatarHora } from '../../lib/formatters';
+import { toggleDisponibilidade, listarAtendimentosDoPsicologo, getAgendamentosPsicologo } from '../../lib/api';
 import AppHeader from '../../components/AppHeader';
+import EmptyState from '../../components/EmptyState';
+import { 
+  getResponsivePadding, 
+  getResponsiveFontSize, 
+  getResponsiveGap,
+  isSmallScreen,
+  isXLargeScreen 
+} from '../../utils/responsive';
+
+interface Estatisticas {
+  totalPacientes: number;
+  totalAgendamentos: number;
+  agendamentosMes: number;
+  pacientesAtivos: number;
+}
 
 export default function HomePsicologoTab() {
-  const { user, token } = useAuth();
+  const { token } = useAuth();
   const [disponivel, setDisponivel] = useState<boolean>(false);
   const [atendimentos, setAtendimentos] = useState<any[]>([]);
-  const [pacienteSelecionado, setPacienteSelecionado] = useState<number | null>(null);
-  const [dataInput, setDataInput] = useState(''); // DD-MM-AAAA
-  const [horaInput, setHoraInput] = useState(''); // HH:MM
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState<number>(new Date().getMonth());
-  const [calendarYear, setCalendarYear] = useState<number>(new Date().getFullYear());
-  const [slotsDisponiveis, setSlotsDisponiveis] = useState<string[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
-  const [psicologoId, setPsicologoId] = useState<number | null>(null);
-
-  const getMonthDays = (year: number, month: number) => {
-    const first = new Date(year, month, 1);
-    const last = new Date(year, month + 1, 0);
-    const days: Date[] = [];
-    for (let d = 1; d <= last.getDate(); d++) days.push(new Date(year, month, d));
-    return days;
-  };
+  const [agendamentos, setAgendamentos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [estatisticas, setEstatisticas] = useState<Estatisticas>({
+    totalPacientes: 0,
+    totalAgendamentos: 0,
+    agendamentosMes: 0,
+    pacientesAtivos: 0,
+  });
 
   useEffect(() => {
     // fallback visual; o real vem do backend em futuras melhorias
@@ -35,49 +39,60 @@ export default function HomePsicologoTab() {
   }, []);
 
   useEffect(() => {
-    (async () => {
-      if (!token) return;
-      try {
-        const data = await listarAtendimentosDoPsicologo(token);
-        setAtendimentos(data || []);
-        // Buscar o ID do psicólogo
-        const psicologo = await getPsicologoMe(token);
-        if (psicologo?.id) {
-          setPsicologoId(psicologo.id);
-        }
-      } catch {
-        setAtendimentos([]);
-      }
-    })();
+    carregarDados();
   }, [token]);
 
-  // Carregar slots disponíveis quando paciente e data forem selecionados
-  useEffect(() => {
-    const carregarSlots = async () => {
-      if (!psicologoId || !dataInput) {
-        setSlotsDisponiveis([]);
-        return;
-      }
-
-      setLoadingSlots(true);
+  const carregarDados = async () => {
+      if (!token) return;
+    setLoading(true);
       try {
-        // Converter DD-MM-AAAA para formato ISO
-        const [dd, mm, yyyy] = dataInput.split('-');
-        const dataISO = `${yyyy}-${mm}-${dd}`;
-        
-        // Usar o ID do psicólogo obtido
-        const response = await getSlotsDisponiveis(psicologoId, dataISO);
-        setSlotsDisponiveis(response.slots || []);
-      } catch (e: any) {
-        console.error('Erro ao carregar slots:', e);
-        setSlotsDisponiveis([]);
-      } finally {
-        setLoadingSlots(false);
-      }
-    };
+      // Carregar atendimentos
+      const atendimentosData = await listarAtendimentosDoPsicologo(token);
+      setAtendimentos(atendimentosData || []);
 
-    carregarSlots();
-  }, [dataInput, psicologoId]);
+      // Carregar agendamentos do psicólogo
+      let agendamentosData: any[] = [];
+      try {
+        agendamentosData = await getAgendamentosPsicologo(token);
+        setAgendamentos(agendamentosData || []);
+      } catch (e) {
+        setAgendamentos([]);
+      }
+      
+      // Calcular estatísticas
+      calcularEstatisticas(atendimentosData || [], agendamentosData);
+
+    } catch (e) {
+      setAtendimentos([]);
+      setAgendamentos([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calcularEstatisticas = (atendimentosData: any[], agendamentosData: any[]) => {
+    const pacientesUnicos = new Set(atendimentosData.map((a) => a.id_paciente));
+    const pacientesAtivos = atendimentosData.filter((a) => a.status === 'ativo').length;
+    
+    const totalAgendamentos = agendamentosData.length;
+    const mesAtual = new Date();
+    const agendamentosMes = agendamentosData.filter((a) => {
+      try {
+        const dataAgendamento = new Date(a.data_hora);
+        return dataAgendamento.getMonth() === mesAtual.getMonth() && 
+               dataAgendamento.getFullYear() === mesAtual.getFullYear();
+      } catch {
+        return false;
+      }
+    }).length;
+    
+    setEstatisticas({
+      totalPacientes: pacientesUnicos.size,
+      totalAgendamentos,
+      agendamentosMes,
+      pacientesAtivos,
+    });
+  };
 
   const handleToggle = async (value: boolean) => {
     setDisponivel(value);
@@ -87,319 +102,297 @@ export default function HomePsicologoTab() {
     } catch {}
   };
 
-  const validarHora = (hora: string): boolean => {
-    const regex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
-    return regex.test(hora);
-  };
-
-  const validarDataFutura = (dataStr: string): boolean => {
-    const [dd, mm, yyyy] = dataStr.split('-');
-    const dataAgendamento = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    dataAgendamento.setHours(0, 0, 0, 0);
-    return dataAgendamento >= hoje;
-  };
-
-  const handleAgendarParaPaciente = async () => {
-    // Validação de campos obrigatórios
-    const camposFaltando: string[] = [];
-    
-    if (!pacienteSelecionado) {
-      camposFaltando.push('Paciente');
-    }
-    if (!dataInput || !dataInput.trim()) {
-      camposFaltando.push('Data');
-    }
-    if (!horaInput || !horaInput.trim()) {
-      camposFaltando.push('Hora');
-    }
-    
-    if (camposFaltando.length > 0) {
-      Alert.alert(
-        'Campos obrigatórios',
-        `Por favor, preencha os seguintes campos:\n\n• ${camposFaltando.join('\n• ')}`,
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-    
-    if (!token) {
-      Alert.alert('Erro', 'Você precisa estar autenticado.');
-      return;
-    }
-
-    if (!dataInput || !dataInput.match(/^\d{2}-\d{2}-\d{4}$/)) {
-      Alert.alert('Erro', 'Digite a data no formato DD-MM-AAAA.');
-      return;
-    }
-
-    if (!validarDataFutura(dataInput)) {
-      Alert.alert('Erro', 'A data deve ser hoje ou no futuro.');
-      return;
-    }
-
-    if (!horaInput || !validarHora(horaInput)) {
-      Alert.alert('Erro', 'Digite a hora no formato HH:MM (ex: 14:30).');
-      return;
-    }
-
-    // Verificar se o horário está disponível
-    if (slotsDisponiveis.length > 0 && !slotsDisponiveis.includes(horaInput)) {
-      Alert.alert('Erro', 'Este horário não está disponível. Por favor, escolha um dos horários disponíveis.');
-      return;
-    }
-
-    try {
-      // Converter DD-MM-AAAA para ISO
-      const [dd, mm, yyyy] = dataInput.split('-');
-      const iso = new Date(`${yyyy}-${mm}-${dd}T${horaInput}:00`).toISOString();
-      
-      console.log('Criando agendamento:', { paciente_id: pacienteSelecionado, data_hora: iso });
-      
-      await criarAgendamento({ data_hora: iso, paciente_id: pacienteSelecionado }, token);
-      
-      Alert.alert('Sucesso', 'Agendamento criado com sucesso!');
-      
-      // Limpar campos
-      setPacienteSelecionado(null);
-      setDataInput('');
-      setHoraInput('');
-    } catch (e: any) {
-      console.error('Erro ao criar agendamento:', e);
-      const mensagem = e?.message || e?.response?.data?.erro || 'Falha ao criar agendamento. Tente novamente.';
-      Alert.alert('Erro', mensagem);
-    }
-  };
+  const StatCard = ({ title, value, subtitle, icon }: { title: string; value: string | number; subtitle?: string; icon?: string }) => (
+    <View style={styles.statCard}>
+      {icon && <Text style={styles.statIcon}>{icon}</Text>}
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statTitle}>{title}</Text>
+      {subtitle && <Text style={styles.statSubtitle}>{subtitle}</Text>}
+    </View>
+  );
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 20 }}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <AppHeader title="Painel do Psicólogo" subtitle="Gerencie seus pacientes e agendamentos" />
       <View style={styles.row}>
         <Text style={styles.label}>Disponível</Text>
         <Switch value={disponivel} onValueChange={handleToggle} />
       </View>
-      <Text style={[styles.title, { marginTop: 16 }]}>Pacientes vinculados</Text>
-      {atendimentos.length === 0 ? (
-        <Text style={styles.note}>Nenhum atendimento ativo.</Text>
+      
+      {loading ? (
+        <ActivityIndicator color={Colors.tint} size="large" style={{ marginTop: 50 }} />
       ) : (
-        atendimentos.map((a) => (
-          <View key={a.id} style={styles.card}>
-            <Text style={styles.cardName}>{a.paciente_nome || `Paciente #${a.id_paciente}`}</Text>
-            <Text style={styles.cardMeta}>Desde: {new Date(a.data_inicio).toLocaleDateString('pt-BR')}</Text>
-            {a.link_consulta ? (
-              <Text style={styles.cardMeta}>Link: {a.link_consulta}</Text>
-            ) : null}
-            <TouchableOpacity style={styles.selectBtn} onPress={() => setPacienteSelecionado(a.id_paciente)}>
-              <Text style={styles.selectBtnText}>{pacienteSelecionado === a.id_paciente ? 'Selecionado' : 'Selecionar'}</Text>
-            </TouchableOpacity>
+        <>
+          {/* Cards de Estatísticas Principais */}
+          <View style={styles.statsGrid}>
+            <StatCard
+              title="Pacientes"
+              value={estatisticas.totalPacientes}
+              subtitle={`${estatisticas.pacientesAtivos} ativos`}
+              icon="👥"
+            />
+            <StatCard
+              title="Agendamentos"
+              value={estatisticas.totalAgendamentos}
+              subtitle={`${estatisticas.agendamentosMes} este mês`}
+              icon="📅"
+            />
           </View>
-        ))
-      )}
 
-      <View style={styles.formCard}>
-        <Text style={styles.formTitle}>Agendar consulta</Text>
-        <Text style={styles.formLabel}>Paciente</Text>
-        <Text style={styles.formHint}>{
-          pacienteSelecionado
-            ? `Paciente ID: ${pacienteSelecionado}`
-            : 'Selecione um paciente na lista acima'
-        }</Text>
-        <Text style={styles.formLabel}>Data (DD-MM-AAAA)</Text>
-        <TouchableOpacity style={styles.input} onPress={() => setShowCalendar(!showCalendar)}>
-          <Text style={{ color: dataInput ? Colors.text : Colors.textSecondary }}>
-            {dataInput || 'Selecione uma data'}
-          </Text>
-        </TouchableOpacity>
-        {showCalendar && (
-          <View style={{ backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 8, marginTop: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <TouchableOpacity onPress={() => {
-                const m = calendarMonth - 1;
-                if (m < 0) { setCalendarMonth(11); setCalendarYear(calendarYear - 1); } else { setCalendarMonth(m); }
-              }}><Text style={{ color: Colors.text }}>{'<'}</Text></TouchableOpacity>
-              <Text style={{ color: Colors.text, fontWeight: '600' }}>{String(calendarMonth + 1).padStart(2, '0')}/{calendarYear}</Text>
-              <TouchableOpacity onPress={() => {
-                const m = calendarMonth + 1;
-                if (m > 11) { setCalendarMonth(0); setCalendarYear(calendarYear + 1); } else { setCalendarMonth(m); }
-              }}><Text style={{ color: Colors.text }}>{'>'}</Text></TouchableOpacity>
-            </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-              {getMonthDays(calendarYear, calendarMonth).map((d, idx) => {
-                const hoje = new Date();
-                hoje.setHours(0, 0, 0, 0);
-                const dataAtual = new Date(d);
-                dataAtual.setHours(0, 0, 0, 0);
-                const isPast = dataAtual < hoje;
-                const isSelected = dataInput === `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
-                
-                return (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[
-                      { width: '14.28%', padding: 6, alignItems: 'center', borderRadius: 8 },
-                      isSelected && { backgroundColor: Colors.tint },
-                      isPast && { opacity: 0.3 }
-                    ]}
-                    onPress={() => {
-                      if (!isPast) {
-                        const dd = String(d.getDate()).padStart(2, '0');
-                        const mm = String(d.getMonth() + 1).padStart(2, '0');
-                        const yyyy = String(d.getFullYear());
-                        setDataInput(`${dd}-${mm}-${yyyy}`);
-                        setShowCalendar(false);
-                        setHoraInput(''); // Limpar hora quando mudar data
-                      }
-                    }}
-                    disabled={isPast}
-                  >
-                    <Text style={{
-                      color: isSelected ? Colors.card : (isPast ? Colors.textSecondary : Colors.text),
-                      fontWeight: isSelected ? '700' : '400'
-                    }}>
-                      {d.getDate()}
+          {/* Resumo de Pacientes */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Resumo de Pacientes</Text>
+            {atendimentos.length === 0 ? (
+              <EmptyState icon="👥" title="Nenhum paciente vinculado" hint="Aceite solicitações para começar" />
+            ) : (
+              <View style={styles.pacientesResumo}>
+                {Array.from(new Map(atendimentos.map((a) => [a.id_paciente, a])).values())
+                  .slice(0, 5)
+                  .map((atendimento: any) => (
+                    <View key={atendimento.id} style={styles.pacienteResumoCard}>
+                      <View style={styles.pacienteResumoHeader}>
+                        <Text style={styles.pacienteResumoNome}>
+                          {atendimento.paciente_nome || `Paciente #${atendimento.id_paciente}`}
                     </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <TouchableOpacity style={styles.createBtn} onPress={() => setShowCalendar(false)}>
-              <Text style={styles.createBtnText}>Fechar calendário</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        <Text style={styles.formLabel}>Hora (HH:MM)</Text>
-        {loadingSlots ? (
-          <Text style={styles.hintText}>Carregando horários disponíveis...</Text>
-        ) : slotsDisponiveis.length > 0 ? (
-          <>
-            <Text style={styles.hintText}>Selecione um horário disponível:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.slotsContainer}>
-              {slotsDisponiveis.map((slot) => (
-                <TouchableOpacity
-                  key={slot}
+                        <View
                   style={[
-                    styles.slotButton,
-                    horaInput === slot && styles.slotButtonSelected,
+                            styles.statusBadge,
+                            atendimento.status === 'ativo' ? styles.statusAtivo : styles.statusInativo,
                   ]}
-                  onPress={() => setHoraInput(slot)}
                 >
                   <Text
                     style={[
-                      styles.slotButtonText,
-                      horaInput === slot && styles.slotButtonTextSelected,
+                              styles.statusText,
+                              atendimento.status === 'ativo' ? styles.statusTextAtivo : styles.statusTextInativo,
                     ]}
                   >
-                    {slot}
+                            {atendimento.status === 'ativo' ? 'Ativo' : 'Finalizado'}
+                          </Text>
+                        </View>
+                      </View>
+                      {atendimento.data_inicio && (
+                        <Text style={styles.pacienteResumoData}>
+                          Desde: {new Date(atendimento.data_inicio).toLocaleDateString('pt-BR')}
                   </Text>
-                </TouchableOpacity>
+                      )}
+                    </View>
               ))}
-            </ScrollView>
-            <Text style={styles.hintText}>Ou digite manualmente:</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="14:30"
-              value={horaInput}
-              onChangeText={(text) => {
-                const formatado = formatarHora(text);
-                setHoraInput(formatado);
-              }}
-              keyboardType="numeric"
-              maxLength={5}
-            />
-          </>
-        ) : dataInput ? (
-          <>
-            <Text style={styles.hintText}>Nenhum horário disponível para esta data. Configure horários na aba "Horários".</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="14:30"
-              value={horaInput}
-              onChangeText={(text) => {
-                const formatado = formatarHora(text);
-                setHoraInput(formatado);
-              }}
-              keyboardType="numeric"
-              maxLength={5}
-            />
-          </>
-        ) : (
-          <>
-            <TextInput
-              style={styles.input}
-              placeholder="14:30"
-              value={horaInput}
-              onChangeText={(text) => {
-                const formatado = formatarHora(text);
-                setHoraInput(formatado);
-              }}
-              keyboardType="numeric"
-              maxLength={5}
-            />
-            <Text style={styles.hintText}>Selecione uma data para ver horários disponíveis</Text>
-          </>
+              </View>
+            )}
+          </View>
+
+          {/* Agendamentos Recentes */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Agendamentos Recentes</Text>
+            {agendamentos.length === 0 ? (
+              <EmptyState icon="📅" title="Nenhum agendamento encontrado" />
+            ) : (
+              <View style={styles.agendamentosList}>
+                {agendamentos.slice(0, 5).map((ag: any, idx: number) => (
+                  <View key={ag.id || idx} style={styles.agendamentoCard}>
+                    <View style={styles.agendamentoHeader}>
+                      <Text style={styles.agendamentoData}>
+                        {ag.data || 'Data não informada'}
+                      </Text>
+                      <Text style={styles.agendamentoHora}>{ag.horario || ''}</Text>
+                    </View>
+                    {ag.paciente_nome && (
+                      <Text style={styles.agendamentoPaciente}>{ag.paciente_nome}</Text>
         )}
-        <TouchableOpacity
+                    <View
           style={[
-            styles.createBtn,
-            (!pacienteSelecionado || !dataInput || !horaInput) && styles.createBtnDisabled
-          ]}
-          onPress={handleAgendarParaPaciente}
-          disabled={!pacienteSelecionado || !dataInput || !horaInput}
+                        styles.statusBadge,
+                        ag.status === 'concluido' || ag.status === 'concluído'
+                          ? styles.statusConcluido
+                          : ag.status === 'cancelado'
+                          ? styles.statusCancelado
+                          : styles.statusAgendado,
+                      ]}
         >
-          <Text style={styles.createBtnText}>Criar Agendamento</Text>
-        </TouchableOpacity>
+                      <Text style={styles.statusText}>{ag.status || 'agendado'}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
       </View>
+        </>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  title: { fontSize: 20, fontWeight: '700', color: Colors.text, marginBottom: 12 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.card, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border },
-  label: { color: Colors.text },
-  note: { color: Colors.textSecondary, marginTop: 12 },
-  card: { backgroundColor: Colors.card, padding: 12, borderRadius: 10, marginTop: 10, borderWidth: 1, borderColor: Colors.border },
-  cardName: { color: Colors.text, fontWeight: '700', fontSize: 16 },
-  cardMeta: { color: Colors.textSecondary, marginTop: 4 },
-  selectBtn: { marginTop: 8, backgroundColor: Colors.cardAlt, padding: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
-  selectBtnText: { color: Colors.text },
-  formCard: { backgroundColor: Colors.card, padding: 12, borderRadius: 10, marginTop: 16, borderWidth: 1, borderColor: Colors.border },
-  formTitle: { color: Colors.text, fontWeight: '700', fontSize: 16, marginBottom: 8 },
-  formLabel: { color: Colors.text, fontWeight: '600', marginTop: 6 },
-  formHint: { color: Colors.textSecondary, marginBottom: 6 },
-  input: { backgroundColor: Colors.cardAlt, borderRadius: 8, padding: 10, marginTop: 6, color: Colors.text, borderWidth: 1, borderColor: Colors.border },
-  hintText: { fontSize: 12, color: Colors.textSecondary, marginTop: 4, fontStyle: 'italic' },
-  slotsContainer: {
-    marginVertical: 8,
-    marginBottom: 12,
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
   },
-  slotButton: {
-    backgroundColor: Colors.cardAlt,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginRight: 8,
+  scrollContent: {
+    padding: getResponsivePadding(24),
+    paddingBottom: isSmallScreen ? 120 : 150,
+    flexGrow: 1,
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    padding: getResponsivePadding(12),
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: getResponsiveGap(24),
+    minHeight: isSmallScreen ? 48 : 56,
+  },
+  label: {
+    color: Colors.text,
+    fontSize: getResponsiveFontSize(14),
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: getResponsiveGap(16),
+    gap: getResponsiveGap(12),
+    flexWrap: isSmallScreen ? 'wrap' : 'nowrap',
+  },
+  statCard: {
+    flex: isSmallScreen ? 1 : 1,
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    padding: getResponsivePadding(isSmallScreen ? 16 : 20),
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+    minWidth: isSmallScreen ? '48%' : undefined,
+    marginBottom: isSmallScreen ? getResponsiveGap(8) : 0,
+    overflow: 'visible',
+    minHeight: isSmallScreen ? 120 : 140,
+  },
+  statIcon: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 28 : 32),
+    marginBottom: getResponsiveGap(8),
+  },
+  statValue: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 28 : 32),
+    fontWeight: '700',
+    color: Colors.tint,
+    marginBottom: 4,
+  },
+  statTitle: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 12 : 14),
+    fontWeight: '600',
+    color: Colors.text,
+    textAlign: 'center',
+  },
+  statSubtitle: {
+    fontSize: getResponsiveFontSize(12),
+    color: Colors.textSecondary,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  section: {
+    marginBottom: getResponsiveGap(24),
+  },
+  sectionTitle: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 16 : 18),
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: getResponsiveGap(16),
+  },
+  pacientesResumo: {
+    gap: getResponsiveGap(12),
+  },
+  pacienteResumoCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    padding: getResponsivePadding(16),
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  slotButtonSelected: {
-    backgroundColor: Colors.tint,
-    borderColor: Colors.tint,
+  pacienteResumoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: getResponsiveGap(8),
+    flexWrap: isSmallScreen ? 'wrap' : 'nowrap',
   },
-  slotButtonText: {
+  pacienteResumoNome: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 14 : 16),
+    fontWeight: '600',
     color: Colors.text,
-    fontSize: 14,
-    fontWeight: '500',
+    flex: 1,
+    flexShrink: 1,
   },
-  slotButtonTextSelected: {
-    color: Colors.card,
+  pacienteResumoData: {
+    fontSize: getResponsiveFontSize(12),
+    color: Colors.textSecondary,
+  },
+  agendamentosList: {
+    gap: getResponsiveGap(12),
+  },
+  agendamentoCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    padding: getResponsivePadding(16),
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  agendamentoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: getResponsiveGap(8),
+    flexWrap: isSmallScreen ? 'wrap' : 'nowrap',
+  },
+  agendamentoData: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 14 : 16),
     fontWeight: '700',
+    color: Colors.text,
+    flexShrink: 1,
   },
-  createBtn: { backgroundColor: Colors.tint, borderRadius: 8, padding: 12, alignItems: 'center', marginTop: 10 },
-  createBtnDisabled: { opacity: 0.5 },
-  createBtnText: { color: Colors.card, fontWeight: '700' },
+  agendamentoHora: {
+    fontSize: getResponsiveFontSize(14),
+    color: Colors.textSecondary,
+  },
+  agendamentoPaciente: {
+    fontSize: getResponsiveFontSize(14),
+    color: Colors.textSecondary,
+    marginBottom: getResponsiveGap(8),
+  },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    paddingVertical: getResponsivePadding(4),
+    paddingHorizontal: getResponsivePadding(12),
+    borderRadius: 12,
+  },
+  statusAtivo: {
+    backgroundColor: '#E8F5E9',
+  },
+  statusInativo: {
+    backgroundColor: '#F5F5F5',
+  },
+  statusConcluido: {
+    backgroundColor: '#E8F5E9',
+  },
+  statusCancelado: {
+    backgroundColor: '#FFEBEE',
+  },
+  statusAgendado: {
+    backgroundColor: Colors.cardAlt,
+  },
+  statusText: {
+    fontSize: getResponsiveFontSize(12),
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  statusTextAtivo: {
+    color: '#4CAF50',
+  },
+  statusTextInativo: {
+    color: Colors.textSecondary,
+  },
 });
-
-

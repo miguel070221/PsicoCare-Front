@@ -31,6 +31,7 @@ export default function NotasSessoesTab() {
   const [salvando, setSalvando] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [notaParaExcluir, setNotaParaExcluir] = useState<number | null>(null);
+  const [buscaPaciente, setBuscaPaciente] = useState('');
 
   // Atualizar ref sempre que notas mudar
   useEffect(() => {
@@ -95,9 +96,20 @@ export default function NotasSessoesTab() {
     notasRef.current = novasNotas;
   };
 
-  const pacientesUnicos = Array.from(
-    new Map(atendimentos.map((a) => [a.id_paciente, { id: a.id_paciente, nome: a.paciente_nome || `Paciente #${a.id_paciente}` }])).values()
-  );
+  const pacientesUnicos = useMemo(() => {
+    const pacientes = Array.from(
+      new Map(atendimentos.map((a) => [a.id_paciente, { id: a.id_paciente, nome: a.paciente_nome || `Paciente #${a.id_paciente}` }])).values()
+    );
+    
+    if (!buscaPaciente.trim()) {
+      return pacientes;
+    }
+    
+    const termoBusca = buscaPaciente.toLowerCase().trim();
+    return pacientes.filter((p: any) => 
+      p.nome.toLowerCase().includes(termoBusca)
+    );
+  }, [atendimentos, buscaPaciente]);
 
   const notasDoPaciente = pacienteSelecionado ? notas.filter((n) => n.id_paciente === pacienteSelecionado) : [];
 
@@ -283,10 +295,33 @@ export default function NotasSessoesTab() {
       </View>
 
       <Text style={styles.sectionTitle}>Selecione um Paciente</Text>
+      
+      {!loading && atendimentos.length > 0 && (
+        <View style={styles.buscaContainer}>
+          <Ionicons name="search-outline" size={18} color={Colors.textSecondary} style={styles.buscaIcon} />
+          <TextInput
+            style={styles.buscaInput}
+            placeholder="Buscar paciente..."
+            placeholderTextColor={Colors.textSecondary}
+            value={buscaPaciente}
+            onChangeText={setBuscaPaciente}
+          />
+          {buscaPaciente.length > 0 && (
+            <TouchableOpacity onPress={() => setBuscaPaciente('')} style={styles.buscaClear}>
+              <Ionicons name="close-circle" size={18} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+      
       {loading ? (
         <ActivityIndicator color={Colors.tint} size="large" style={{ marginVertical: 20 }} />
       ) : pacientesUnicos.length === 0 ? (
-        <EmptyState icon="👥" title="Nenhum paciente vinculado" hint="Aceite solicitações para ver pacientes" />
+        <EmptyState 
+          icon="👥" 
+          title={buscaPaciente.trim() ? "Nenhum paciente encontrado" : "Nenhum paciente vinculado"} 
+          hint={buscaPaciente.trim() ? "Tente buscar com outro termo" : "Aceite solicitações para ver pacientes"} 
+        />
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pacientesList}>
           {pacientesUnicos.map((p: any) => (
@@ -514,25 +549,51 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   sectionTitle: {
-    fontSize: isSmallScreen ? 16 : 18,
+    fontSize: isSmallScreen ? 15 : 16,
     fontWeight: '700',
     color: Colors.text,
-    marginTop: 16,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  buscaContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderRadius: 8,
+    paddingHorizontal: 12,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    height: 40,
+  },
+  buscaIcon: {
+    marginRight: 8,
+  },
+  buscaInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.text,
+    paddingVertical: 0,
+  },
+  buscaClear: {
+    padding: 4,
   },
   pacientesList: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   pacienteBtn: {
     backgroundColor: Colors.cardAlt,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    marginRight: 12,
-    borderWidth: 2,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    borderWidth: 1.5,
     borderColor: Colors.border,
-    minWidth: 120,
+    minWidth: 80,
+    maxWidth: 120,
     alignItems: 'center',
+    justifyContent: 'center',
+    height: 36,
   },
   pacienteBtnSelected: {
     backgroundColor: Colors.tint,
@@ -541,11 +602,13 @@ const styles = StyleSheet.create({
   pacienteBtnText: {
     color: Colors.text,
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: 12,
+    textAlign: 'center',
   },
   pacienteBtnTextSelected: {
     color: Colors.card,
     fontWeight: '700',
+    fontSize: 12,
   },
   notasContainer: {
     marginTop: 8,

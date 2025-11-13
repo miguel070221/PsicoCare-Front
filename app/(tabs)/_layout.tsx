@@ -48,25 +48,32 @@ export default function TabLayout() {
           elevation: 5,
           backgroundColor: Colors.background,
           borderRadius: 14,
-          height: isSmallScreen ? 58 : 62,
+          height: isSmallScreen ? 56 : 60,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.12,
           shadowRadius: 4,
           borderWidth: 1,
           borderColor: Colors.border,
-          paddingHorizontal: isSmallScreen ? 4 : 8,
+          paddingHorizontal: isSmallScreen ? 2 : 4,
+          paddingBottom: 4,
+          paddingTop: 4,
         },
         // Cores dos ícones e texto
         tabBarActiveTintColor: Colors.headerBlue,
         tabBarInactiveTintColor: Colors.icon,
         tabBarLabelStyle: {
-          fontSize: getResponsiveFontSize(isSmallScreen ? 10 : 12),
+          fontSize: getResponsiveFontSize(isSmallScreen ? 9 : 10),
           fontWeight: '600',
-          marginBottom: 4,
+          marginBottom: 2,
+          marginTop: 2,
         },
         tabBarIconStyle: {
-          marginTop: 4,
+          marginTop: 2,
+          marginBottom: 0,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 4,
         },
       }}
     >
@@ -77,7 +84,7 @@ export default function TabLayout() {
           href: role === 'psicologo' ? null : undefined,
           title: 'Início',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" color={color} size={size} />
+            <Ionicons name="home-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />
@@ -87,7 +94,7 @@ export default function TabLayout() {
           href: role === 'psicologo' ? null : undefined,
           title: 'Psicólogos',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-outline" color={color} size={size} />
+            <Ionicons name="people-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />
@@ -97,7 +104,7 @@ export default function TabLayout() {
           href: role === 'psicologo' ? null : undefined,
           title: 'Emergências',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="warning-outline" color={color} size={size} />
+            <Ionicons name="warning-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />
@@ -107,7 +114,7 @@ export default function TabLayout() {
           href: role === 'psicologo' ? null : undefined,
           title: 'Avaliações',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="star-outline" color={color} size={size} />
+            <Ionicons name="star-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />
@@ -117,7 +124,7 @@ export default function TabLayout() {
           href: role !== 'psicologo' ? null : undefined,
           title: 'Painel',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="briefcase-outline" color={color} size={size} />
+            <Ionicons name="briefcase-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />
@@ -127,7 +134,7 @@ export default function TabLayout() {
           href: role !== 'psicologo' ? null : undefined,
           title: 'Pacientes',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-circle-outline" color={color} size={size} />
+            <Ionicons name="people-circle-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />
@@ -136,8 +143,9 @@ export default function TabLayout() {
         options={{
           href: role !== 'psicologo' ? null : undefined,
           title: 'Solicitações',
+          tabBarLabel: 'Solicit.',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="mail-unread-outline" color={color} size={size} />
+            <Ionicons name="mail-unread-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />
@@ -146,8 +154,9 @@ export default function TabLayout() {
         options={{
           href: role !== 'psicologo' ? null : undefined,
           title: 'Acompanhamentos',
+          tabBarLabel: 'Acompanh.',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="document-text-outline" color={color} size={size} />
+            <Ionicons name="document-text-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />
@@ -157,7 +166,7 @@ export default function TabLayout() {
           href: role !== 'psicologo' ? null : undefined,
           title: 'Notas',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="create-outline" color={color} size={size} />
+            <Ionicons name="create-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />
@@ -165,8 +174,9 @@ export default function TabLayout() {
         name="agendamentos"
         options={{
           title: 'Agendamentos',
+          tabBarLabel: 'Agendam.',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar-outline" color={color} size={size} />
+            <Ionicons name="calendar-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />
@@ -175,7 +185,7 @@ export default function TabLayout() {
         options={{
           title: 'Perfil',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-circle-outline" color={color} size={size} />
+            <Ionicons name="person-circle-outline" color={color} size={size ? size - 2 : 20} />
           ),
         }}
       />

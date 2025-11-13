@@ -30,6 +30,7 @@ export default function AdminAgendamentos() {
   
   // Estados de filtros e busca
   const [busca, setBusca] = useState<string>('');
+  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'agendado'>('todos');
   const [filtroPsicologo, setFiltroPsicologo] = useState<string>('');
   const [filtroPaciente, setFiltroPaciente] = useState<string>('');
   const [filtroData, setFiltroData] = useState<string>('');
@@ -98,6 +99,17 @@ export default function AdminAgendamentos() {
       );
     }
 
+    // Filtro por status
+    if (filtroStatus !== 'todos') {
+      filtrados = filtrados.filter(ag => {
+        const status = ag.status?.toLowerCase() || 'agendado';
+        if (filtroStatus === 'agendado') {
+          return status === 'agendado' || !ag.status;
+        }
+        return true;
+      });
+    }
+
     // Filtro por psicólogo
     if (filtroPsicologo) {
       filtrados = filtrados.filter(ag => 
@@ -137,7 +149,7 @@ export default function AdminAgendamentos() {
     }
 
     setAgendamentosFiltrados(filtrados);
-  }, [agendamentos, busca, filtroPsicologo, filtroPaciente, filtroData]);
+  }, [agendamentos, busca, filtroStatus, filtroPsicologo, filtroPaciente, filtroData]);
 
   const abrirModalCriar = () => {
     setPsicologoId('');
@@ -338,6 +350,25 @@ export default function AdminAgendamentos() {
         </View>
 
         <View style={styles.filtrosRow}>
+          <TouchableOpacity
+            style={[styles.filtroButton, filtroStatus === 'todos' && styles.filtroButtonAtivo]}
+            onPress={() => setFiltroStatus('todos')}
+          >
+            <Text style={[styles.filtroButtonText, filtroStatus === 'todos' && styles.filtroButtonTextAtivo]}>
+              Todos
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filtroButton, filtroStatus === 'agendado' && styles.filtroButtonAtivo]}
+            onPress={() => setFiltroStatus('agendado')}
+          >
+            <Text style={[styles.filtroButtonText, filtroStatus === 'agendado' && styles.filtroButtonTextAtivo]}>
+              Agendados
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.filtrosRow}>
           <View style={styles.filtroSelectContainer}>
             <Text style={styles.filtroLabel}>Psicólogo:</Text>
             <ScrollView style={styles.filtroSelect} horizontal showsHorizontalScrollIndicator={false}>
@@ -415,7 +446,7 @@ export default function AdminAgendamentos() {
           <EmptyState 
             icon="📅" 
             title="Nenhum agendamento encontrado" 
-            hint={busca || filtroPsicologo || filtroPaciente || filtroData ? "Tente ajustar os filtros" : "Clique em 'Novo Agendamento' para criar um"} 
+            hint={busca || filtroStatus !== 'todos' || filtroPsicologo || filtroPaciente || filtroData ? "Tente ajustar os filtros" : "Clique em 'Novo Agendamento' para criar um"} 
           />
         ) : (
           agendamentosFiltrados.map((ag, idx) => {

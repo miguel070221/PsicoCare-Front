@@ -31,6 +31,24 @@ export const getAcompanhamentos = async (token: string): Promise<any[]> => {
 export const getAcompanhamentosPaciente = async (pacienteId: number, token: string): Promise<any[]> => {
   return await getComToken(`/acompanhamentos/paciente/${pacienteId}`, token);
 };
+
+/**
+ * Atualizar acompanhamento
+ */
+export const atualizarAcompanhamento = async (
+  acompanhamentoId: number,
+  dados: { texto?: string; qualidade_sono?: number; humor?: string },
+  token: string
+): Promise<any> => {
+  return await apiFetch(`/acompanhamentos/${acompanhamentoId}`, 'PUT', dados, token);
+};
+
+/**
+ * Deletar acompanhamento
+ */
+export const deletarAcompanhamento = async (acompanhamentoId: number, token: string): Promise<any> => {
+  return await apiFetch(`/acompanhamentos/${acompanhamentoId}`, 'DELETE', undefined, token);
+};
 /**
  * Buscar dados do usuário pelo ID
  */

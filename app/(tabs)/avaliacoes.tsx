@@ -1,13 +1,14 @@
 // Localização: (app)/(tabs)/avaliacoes.tsx
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert, Modal } from 'react-native';
 import AppHeader from '../../components/AppHeader';
 import EmptyState from '../../components/EmptyState';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
-import { criarAcompanhamento, getAcompanhamentos } from '../../lib/api';
+import { criarAcompanhamento, getAcompanhamentos, atualizarAcompanhamento, deletarAcompanhamento } from '../../lib/api';
 import { isSmallScreen, getResponsivePadding, getResponsiveFontSize } from '../../utils/responsive';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function AcompanhamentoDiario() {
   const { token } = useAuth();
@@ -18,6 +19,12 @@ export default function AcompanhamentoDiario() {
   const [humor, setHumor] = useState(''); // emoji
   const [outrasEmocoes, setOutrasEmocoes] = useState<string[]>([]);
   const [novaEmocao, setNovaEmocao] = useState('');
+  const [editandoAcompanhamento, setEditandoAcompanhamento] = useState<any>(null);
+  const [modalEditarVisible, setModalEditarVisible] = useState(false);
+  const [modalExcluirVisible, setModalExcluirVisible] = useState(false);
+  const [acompanhamentoParaExcluir, setAcompanhamentoParaExcluir] = useState<any>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
   const humores = [
     { label: 'Estável', value: 'Estável', emoji: '🙂' },
     { label: 'Ansioso', value: 'Ansioso', emoji: '😰' },
@@ -46,13 +53,106 @@ export default function AcompanhamentoDiario() {
       setTextoAcompanhamento('');
       setQualidadeSono(0);
       setHumor('');
-  setOutrasEmocoes([]);
-  setNovaEmocao('');
+      setOutrasEmocoes([]);
+      setNovaEmocao('');
       Alert.alert('Registro salvo!');
     } catch (e) {
       Alert.alert('Erro ao salvar registro');
     }
     setLoadingAcompanhamento(false);
+  };
+
+  const abrirModalEditar = (acompanhamento: any) => {
+    setEditandoAcompanhamento(acompanhamento);
+    setTextoAcompanhamento(acompanhamento.texto || '');
+    setQualidadeSono(acompanhamento.qualidade_sono || 0);
+    
+    // Verificar se o humor está na lista de humores padrão
+    const humorEncontrado = humores.find(h => h.value === acompanhamento.humor);
+    if (humorEncontrado) {
+      setHumor(acompanhamento.humor);
+      setOutrasEmocoes([]);
+    } else {
+      setHumor('Outro');
+      setOutrasEmocoes(acompanhamento.humor ? acompanhamento.humor.split(', ').filter((e: string) => e.trim()) : []);
+    }
+    setModalEditarVisible(true);
+  };
+
+  const fecharModalEditar = () => {
+    setModalEditarVisible(false);
+    setEditandoAcompanhamento(null);
+    setTextoAcompanhamento('');
+    setQualidadeSono(0);
+    setHumor('');
+    setOutrasEmocoes([]);
+    setNovaEmocao('');
+  };
+
+  const handleSalvarEdicao = async () => {
+    if (!editandoAcompanhamento || !token) return;
+    if (!textoAcompanhamento && !qualidadeSono && !humor) {
+      Alert.alert('Preencha pelo menos um campo!');
+      return;
+    }
+    
+    setSalvando(true);
+    try {
+      let humorFinal = humor;
+      if (humor === 'Outro') {
+        if (outrasEmocoes.length > 0) {
+          humorFinal = outrasEmocoes.join(', ');
+        } else {
+          Alert.alert('Adicione pelo menos uma emoção personalizada!');
+          setSalvando(false);
+          return;
+        }
+      }
+      
+      await atualizarAcompanhamento(
+        editandoAcompanhamento.id,
+        {
+          texto: textoAcompanhamento,
+          qualidade_sono: qualidadeSono,
+          humor: humorFinal,
+        },
+        token
+      );
+      
+      await fetchAcompanhamentos();
+      fecharModalEditar();
+      Alert.alert('Registro atualizado!');
+    } catch (e: any) {
+      console.error('Erro ao atualizar:', e);
+      Alert.alert('Erro', e?.response?.data?.error || e?.response?.data?.erro || e?.message || 'Não foi possível atualizar o registro.');
+    }
+    setSalvando(false);
+  };
+
+  const abrirModalExcluir = (acompanhamento: any) => {
+    setAcompanhamentoParaExcluir(acompanhamento);
+    setModalExcluirVisible(true);
+  };
+
+  const fecharModalExcluir = () => {
+    setModalExcluirVisible(false);
+    setAcompanhamentoParaExcluir(null);
+  };
+
+  const handleExcluir = async () => {
+    if (!acompanhamentoParaExcluir || !token) return;
+    
+    setExcluindo(true);
+    try {
+      await deletarAcompanhamento(acompanhamentoParaExcluir.id, token);
+      await fetchAcompanhamentos();
+      fecharModalExcluir();
+      Alert.alert('Registro excluído!');
+    } catch (e: any) {
+      console.error('Erro ao excluir:', e);
+      Alert.alert('Erro', e?.response?.data?.error || e?.response?.data?.erro || e?.message || 'Não foi possível excluir o registro.');
+    }
+    setExcluindo(false);
   };
 
   const fetchAcompanhamentos = async () => {
@@ -171,18 +271,196 @@ export default function AcompanhamentoDiario() {
               <Text style={styles.sectionTitle}>Histórico de acompanhamentos:</Text>
               {acompanhamentos.map((a) => (
                 <View key={a.id} style={styles.card}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                    <Text style={{ color: Colors.text, fontWeight: '600', fontSize: 13, marginRight: 8 }}>{a.dataHora}</Text>
-                    <Text style={{ color: Colors.textSecondary, fontSize: 13, marginRight: 8 }}>Sono: {a.sono || '-'}</Text>
-                    <Text style={{ color: Colors.textSecondary, fontSize: 13 }}>Humor: {a.humor || '-'}</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
+                        <Text style={{ color: Colors.text, fontWeight: '600', fontSize: 13, marginRight: 8 }}>{a.dataHora}</Text>
+                        <Text style={{ color: Colors.textSecondary, fontSize: 13, marginRight: 8 }}>Sono: {a.sono || '-'}</Text>
+                        <Text style={{ color: Colors.textSecondary, fontSize: 13 }}>Humor: {a.humor || '-'}</Text>
+                      </View>
+                      {a.texto && <Text style={{ color: Colors.text, marginTop: 2 }}>{a.texto}</Text>}
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 8, marginLeft: 8 }}>
+                      <TouchableOpacity
+                        onPress={() => abrirModalEditar(a)}
+                        style={styles.btnAcao}
+                      >
+                        <Ionicons name="create-outline" size={18} color={Colors.tint} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => abrirModalExcluir(a)}
+                        style={styles.btnAcao}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={Colors.destructive} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <Text style={{ color: Colors.text, marginTop: 2 }}>{a.texto}</Text>
                 </View>
               ))}
             </>
           )}
         </View>
       )}
+
+      {/* Modal de Edição */}
+      <Modal
+        visible={modalEditarVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={fecharModalEditar}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Editar Registro</Text>
+              <TouchableOpacity onPress={fecharModalEditar}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalBody}>
+              <Text style={styles.sectionTitle}>Observações do dia</Text>
+              <TextInput
+                style={styles.textArea}
+                placeholder="Descreva sintomas, eventos ou observações clínicas."
+                placeholderTextColor={Colors.textSecondary}
+                value={textoAcompanhamento}
+                onChangeText={setTextoAcompanhamento}
+                multiline
+              />
+              
+              <Text style={styles.sectionTitle}>Qualidade do sono</Text>
+              <View style={styles.sonoRow}>
+                {[1,2,3,4,5].map((num) => (
+                  <TouchableOpacity
+                    key={num}
+                    style={[styles.sonoBtn, qualidadeSono === num && styles.sonoBtnSelected]}
+                    onPress={() => setQualidadeSono(num)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ color: qualidadeSono === num ? Colors.card : Colors.text, fontWeight: 'bold', fontSize: 28 }}>{num}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              
+              <Text style={styles.sectionTitle}>Estado emocional:</Text>
+              <View style={styles.optionsContainer}>
+                {humores.map((h) => (
+                  <TouchableOpacity
+                    key={h.value}
+                    style={[styles.moodOption, humor === h.value && styles.moodOptionSelected]}
+                    onPress={() => { setHumor(h.value); if(h.value !== 'Outro') { setOutrasEmocoes([]); setNovaEmocao(''); } }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.moodEmoji}>{h.emoji}</Text>
+                    <Text style={[styles.optionText, { fontSize: isSmallScreen ? 10 : 12 }]} numberOfLines={1} ellipsizeMode="tail">
+                      {h.value === 'Outro' && outrasEmocoes.length > 0 ? outrasEmocoes.join(', ') : h.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {humor === 'Outro' && (
+                  <View style={styles.outraEmocaoBox}>
+                    <Text style={styles.outraEmocaoLabel}>Adicione emoções (máx 10 caracteres cada):</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <TextInput
+                        style={styles.outraEmocaoInput}
+                        value={novaEmocao}
+                        onChangeText={t => setNovaEmocao(t.slice(0,10))}
+                        maxLength={10}
+                        placeholder="Digite aqui..."
+                        placeholderTextColor={Colors.textSecondary}
+                      />
+                      <TouchableOpacity
+                        style={[styles.button, { paddingVertical: 8, paddingHorizontal: 12, marginTop: 0 }]}
+                        onPress={() => {
+                          if (novaEmocao.trim() && !outrasEmocoes.includes(novaEmocao.trim())) {
+                            setOutrasEmocoes([...outrasEmocoes, novaEmocao.trim()]);
+                            setNovaEmocao('');
+                          }
+                        }}
+                      >
+                        <Text style={{ color: Colors.card, fontWeight: 'bold' }}>Adicionar</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8, gap: 6 }}>
+                      {outrasEmocoes.map((emo, idx) => (
+                        <View key={emo+idx} style={{ backgroundColor: Colors.tint, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, marginRight: 4, marginBottom: 4, flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={{ color: Colors.card, fontWeight: 'bold', fontSize: 14 }}>{emo}</Text>
+                          <TouchableOpacity onPress={() => setOutrasEmocoes(outrasEmocoes.filter((e, i) => i !== idx))} style={{ marginLeft: 6 }}>
+                            <Text style={{ color: Colors.card, fontWeight: 'bold' }}>×</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              </View>
+            </ScrollView>
+            
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={fecharModalEditar}
+                disabled={salvando}
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSave, salvando && styles.modalButtonDisabled]}
+                onPress={handleSalvarEdicao}
+                disabled={salvando}
+              >
+                {salvando ? (
+                  <ActivityIndicator size="small" color={Colors.card} />
+                ) : (
+                  <Text style={styles.modalButtonTextSave}>Salvar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de Confirmação de Exclusão */}
+      <Modal
+        visible={modalExcluirVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={fecharModalExcluir}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalConfirmContent}>
+            <View style={styles.modalConfirmHeader}>
+              <Ionicons name="warning-outline" size={32} color={Colors.destructive} />
+              <Text style={styles.modalConfirmTitle}>Excluir Registro</Text>
+            </View>
+            <Text style={styles.modalConfirmText}>
+              Tem certeza que deseja excluir este registro de acompanhamento?
+              {'\n\n'}Esta ação não pode ser desfeita.
+            </Text>
+            <View style={styles.modalConfirmFooter}>
+              <TouchableOpacity
+                style={[styles.modalConfirmButton, styles.modalConfirmButtonCancel]}
+                onPress={fecharModalExcluir}
+                disabled={excluindo}
+              >
+                <Text style={styles.modalConfirmButtonTextCancel}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmButton, styles.modalConfirmButtonConfirm, excluindo && styles.modalButtonDisabled]}
+                onPress={handleExcluir}
+                disabled={excluindo}
+              >
+                {excluindo ? (
+                  <ActivityIndicator size="small" color={Colors.card} />
+                ) : (
+                  <Text style={styles.modalConfirmButtonTextConfirm}>Excluir</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -342,5 +620,137 @@ const styles = StyleSheet.create({
     color: Colors.background,
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  btnAcao: {
+    padding: 6,
+    borderRadius: 6,
+    backgroundColor: Colors.cardAlt,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: getResponsivePadding(20),
+  },
+  modalContent: {
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: isSmallScreen ? '95%' : 500,
+    maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: getResponsivePadding(20),
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 18 : 20),
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  modalBody: {
+    padding: getResponsivePadding(20),
+    maxHeight: isSmallScreen ? 400 : 500,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: getResponsivePadding(20),
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  modalButton: {
+    flex: 1,
+    padding: getResponsivePadding(14),
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  modalButtonCancel: {
+    backgroundColor: Colors.border,
+  },
+  modalButtonSave: {
+    backgroundColor: Colors.tint,
+  },
+  modalButtonDisabled: {
+    opacity: 0.6,
+  },
+  modalButtonTextCancel: {
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  modalButtonTextSave: {
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: '600',
+    color: Colors.card,
+  },
+  modalConfirmContent: {
+    backgroundColor: Colors.card,
+    borderRadius: 16,
+    width: isSmallScreen ? '95%' : '90%',
+    maxWidth: 400,
+    padding: getResponsivePadding(24),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalConfirmHeader: {
+    alignItems: 'center',
+    marginBottom: getResponsivePadding(20),
+  },
+  modalConfirmTitle: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 18 : 20),
+    fontWeight: '700',
+    color: Colors.text,
+    marginTop: getResponsivePadding(12),
+  },
+  modalConfirmText: {
+    fontSize: getResponsiveFontSize(isSmallScreen ? 14 : 16),
+    color: Colors.text,
+    textAlign: 'center',
+    marginBottom: getResponsivePadding(24),
+    lineHeight: isSmallScreen ? 20 : 24,
+  },
+  modalConfirmFooter: {
+    flexDirection: 'row',
+    gap: getResponsivePadding(12),
+  },
+  modalConfirmButton: {
+    flex: 1,
+    padding: getResponsivePadding(14),
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  modalConfirmButtonCancel: {
+    backgroundColor: Colors.border,
+  },
+  modalConfirmButtonConfirm: {
+    backgroundColor: Colors.destructive,
+  },
+  modalConfirmButtonTextCancel: {
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  modalConfirmButtonTextConfirm: {
+    fontSize: getResponsiveFontSize(16),
+    fontWeight: '600',
+    color: Colors.card,
   },
 });

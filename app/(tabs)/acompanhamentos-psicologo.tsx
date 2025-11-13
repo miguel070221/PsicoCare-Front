@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import React, { useEffect, useState, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput } from 'react-native';
 import Colors from '../../constants/Colors';
 import { useAuth } from '../contexts/AuthContext';
 import { listarAtendimentosDoPsicologo, getAcompanhamentosPaciente } from '../../lib/api';
 import { useRouter } from 'expo-router';
 import AppHeader from '../../components/AppHeader';
 import EmptyState from '../../components/EmptyState';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function AcompanhamentosPsicologoTab() {
   const { token } = useAuth();
@@ -15,6 +16,7 @@ export default function AcompanhamentosPsicologoTab() {
   const [acompanhamentos, setAcompanhamentos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingAcompanhamentos, setLoadingAcompanhamentos] = useState(false);
+  const [buscaPaciente, setBuscaPaciente] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -50,9 +52,20 @@ export default function AcompanhamentosPsicologoTab() {
     })();
   }, [pacienteSelecionado, token]);
 
-  const pacientesUnicos = Array.from(
-    new Map(atendimentos.map((a) => [a.id_paciente, { id: a.id_paciente, nome: a.paciente_nome || `Paciente #${a.id_paciente}` }])).values()
-  );
+  const pacientesUnicos = useMemo(() => {
+    const pacientes = Array.from(
+      new Map(atendimentos.map((a) => [a.id_paciente, { id: a.id_paciente, nome: a.paciente_nome || `Paciente #${a.id_paciente}` }])).values()
+    );
+    
+    if (!buscaPaciente.trim()) {
+      return pacientes;
+    }
+    
+    const termoBusca = buscaPaciente.toLowerCase().trim();
+    return pacientes.filter((p: any) => 
+      p.nome.toLowerCase().includes(termoBusca)
+    );
+  }, [atendimentos, buscaPaciente]);
 
   const formatarData = (dataHora: string): string => {
     try {
@@ -91,10 +104,33 @@ export default function AcompanhamentosPsicologoTab() {
       <AppHeader title="Acompanhamentos" subtitle="Visualize os registros dos pacientes" />
       
       <Text style={styles.sectionTitle}>Selecione um Paciente</Text>
+      
+      {!loading && atendimentos.length > 0 && (
+        <View style={styles.buscaContainer}>
+          <Ionicons name="search-outline" size={18} color={Colors.textSecondary} style={styles.buscaIcon} />
+          <TextInput
+            style={styles.buscaInput}
+            placeholder="Buscar paciente..."
+            placeholderTextColor={Colors.textSecondary}
+            value={buscaPaciente}
+            onChangeText={setBuscaPaciente}
+          />
+          {buscaPaciente.length > 0 && (
+            <TouchableOpacity onPress={() => setBuscaPaciente('')} style={styles.buscaClear}>
+              <Ionicons name="close-circle" size={18} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+      
       {loading ? (
         <ActivityIndicator color={Colors.tint} size="large" style={{ marginVertical: 20 }} />
       ) : pacientesUnicos.length === 0 ? (
-        <EmptyState icon="👥" title="Nenhum paciente vinculado" hint="Aceite solicitações para ver acompanhamentos" />
+        <EmptyState 
+          icon="👥" 
+          title={buscaPaciente.trim() ? "Nenhum paciente encontrado" : "Nenhum paciente vinculado"} 
+          hint={buscaPaciente.trim() ? "Tente buscar com outro termo" : "Aceite solicitações para ver acompanhamentos"} 
+        />
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pacientesList}>
           {pacientesUnicos.map((p: any) => (
@@ -185,25 +221,51 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: Colors.text,
-    marginTop: 16,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  buscaContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderRadius: 8,
+    paddingHorizontal: 12,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    height: 40,
+  },
+  buscaIcon: {
+    marginRight: 8,
+  },
+  buscaInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.text,
+    paddingVertical: 0,
+  },
+  buscaClear: {
+    padding: 4,
   },
   pacientesList: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   pacienteBtn: {
     backgroundColor: Colors.cardAlt,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    marginRight: 12,
-    borderWidth: 2,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    borderWidth: 1.5,
     borderColor: Colors.border,
-    minWidth: 120,
+    minWidth: 80,
+    maxWidth: 120,
     alignItems: 'center',
+    justifyContent: 'center',
+    height: 36,
   },
   pacienteBtnSelected: {
     backgroundColor: Colors.tint,
@@ -212,11 +274,13 @@ const styles = StyleSheet.create({
   pacienteBtnText: {
     color: Colors.text,
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: 12,
+    textAlign: 'center',
   },
   pacienteBtnTextSelected: {
     color: Colors.card,
     fontWeight: '700',
+    fontSize: 12,
   },
   acompanhamentosContainer: {
     marginTop: 8,

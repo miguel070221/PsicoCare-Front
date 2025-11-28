@@ -1,0 +1,23 @@
+# Resultados de testes
+*.jtl
+*.log
+results/
+coverage/
+node_modules/
+
+# Arquivos temporários
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Selenium
+*.png
+*.html
+screenshots/
+
+# JMeter
+*.jtl
+report/
+results/
+

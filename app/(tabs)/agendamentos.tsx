@@ -412,7 +412,7 @@ export default function Agendamentos() {
           user_id: user?.id,
           role: user?.role
         });
-        resultado = await criarAgendamento({ profissional_id: selectedProfissional, data_hora: iso }, token);
+        resultado = await criarAgendamento({ profissional_id: selectedProfissional || undefined, data_hora: iso }, token);
       } else if (isPsicologo) {
         console.log('📤 [CRIAR] ====== CRIANDO AGENDAMENTO PARA PSICÓLOGO ======');
         console.log('📤 [CRIAR] paciente_id:', pacienteSelecionado);
@@ -442,8 +442,8 @@ export default function Agendamentos() {
         console.log('📤 [CRIAR] Enviando requisição para criar agendamento...');
         
         resultado = await criarAgendamento({ 
-          paciente_id: pacienteSelecionado, 
-          profissional_id: psicologoId || user?.id,
+          paciente_id: pacienteSelecionado || undefined, 
+          profissional_id: psicologoId || user?.id || undefined,
           data_hora: iso 
         }, token);
         
@@ -554,7 +554,6 @@ export default function Agendamentos() {
       Alert.alert('Erro', 'Não foi possível carregar os dados do agendamento para edição.');
     }
   };
-
   const handleSalvarAgendamento = useCallback(async () => {
     if (editingAgendamento) {
       // Atualizar agendamento existente
@@ -1526,13 +1525,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
   },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: Colors.tint,
-  },
   hintText: {
     fontSize: 12,
     color: Colors.textSecondary,
@@ -1950,63 +1942,6 @@ const styles = StyleSheet.create({
   slotButtonTextSelected: {
     color: Colors.card,
     fontWeight: '700',
-  },
-  acompanhamentoCard: {
-    backgroundColor: Colors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    color: Colors.text,
-    fontSize: 15,
-  },
-  button: {
-    backgroundColor: Colors.tint,
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  buttonDisabled: {
-    backgroundColor: Colors.textSecondary,
-    opacity: 0.5,
-  },
-  buttonText: {
-    color: Colors.card,
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  editButton: {
-    backgroundColor: Colors.headerBlue,
-  },
-  cancelButton: {
-    backgroundColor: Colors.destructive,
-  },
-  hintText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontStyle: 'italic',
-    marginTop: 4,
   },
   // Modal de Confirmação
   modalOverlay: {
